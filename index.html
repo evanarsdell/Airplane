@@ -2,13 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>3D Airplane Sandbox - Improved Physics</title>
+  <title>Simple Flight Game</title>
   <style>
-    /* Minimal CSS reset */
+    /* Minimal CSS reset: fill viewport and use a sky-blue background */
     body {
       margin: 0;
       overflow: hidden;
-      background: #87CEEB; /* Sky blue background */
+      background: #87CEEB;
     }
     canvas {
       display: block;
@@ -20,91 +20,125 @@
 <body>
 <script>
 /*
-  3D Airplane Sandbox – Improved Physics & Controls
+  Simple Flight Game – Basic Flight Controls
 
   Controls:
-    - Up Arrow: Increase throttle (forward speed)
-    - Down Arrow: Decrease throttle
-    - W: Pitch nose down
-    - S: Pitch nose up
-    - A: Yaw (turn) left
-    - D: Yaw (turn) right
-
-  Physics:
-    - Forward motion is handled along the horizontal plane only.
-    - Lift is computed from speed and the airplane’s pitch (negative rotation.x).
-    - Gravity continuously pulls downward.
-    - When throttle is low (low speed) lift is insufficient and the plane falls.
-    - Pitch damping returns the plane to level flight when no input is applied.
+    • Throttle: Up Arrow (increase) and Down Arrow (decrease)
+    • Pitch: W (nose down) and S (nose up)
+    • Roll: A (tilt left) and D (tilt right)
+    • Automatic yaw is applied proportional to the roll (simulate bank turn)
+  
+  Movement:
+    • Horizontal movement is computed using the airplane’s yaw (rotation.y)
+    • Vertical movement is updated by a simple physics model:
+         vertical acceleration = (–pitch * pitchInfluence) + gravity
+    • If the airplane’s altitude drops to ground level, it “lands.”
+  
+  Scene:
+    • A huge grassy ground (infinite-feeling)
+    • A long runway with a yellow dotted center line
+    • Random blocky trees for scale
 */
 
+// Global variables and constants
 let scene, camera, renderer;
-let airplane, airplaneSpeed = 0, airplaneMaxSpeed = 2, airplaneAcceleration = 0.02;
-let verticalVelocity = 0; // vertical speed (for altitude changes)
-const gravity = -0.005;    // constant downward acceleration
-const liftFactor = 0.008;  // how strongly speed and pitch generate lift
-const groundLevel = 0.25;  // height of the ground (runway)
-const keys = {};         // stores which keys are pressed
+let airplane;
+let airplaneSpeed = 0;
+const airplaneMaxSpeed = 5;
+const airplaneAcceleration = 0.02;
+let verticalVelocity = 0;
+const gravity = -0.0025;
+const pitchInfluence = 0.05;
+const groundLevel = 0.25;
+const yawFactor = 0.02;       // automatic yaw change per frame per roll angle
+const rollDamping = 0.98;     // damping when no roll input is given
+const pitchDamping = 0.98;    // damping when no pitch input is given
+const controlDelta = 0.01;    // change in rotation per frame per key press
+const keys = {};              // tracks currently pressed keys
 
 init();
 animate();
 
 function init() {
-  // Create scene with sky-blue background
+  // Create scene and set background (sky blue)
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x87CEEB);
 
-  // Set up camera with an extended far clipping plane (for our "infinite" world)
-  camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 20000);
+  // Create camera with a far clipping plane for our huge world
+  camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 20000);
 
-  // Set up renderer and add to DOM
+  // Set up renderer and add its canvas to the DOM
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
   document.body.appendChild(renderer.domElement);
 
-  // Add lighting: directional and ambient
+  // Add lights: an ambient and a directional light
+  scene.add(new THREE.AmbientLight(0x404040));
   const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
   dirLight.position.set(100, 200, 100);
   scene.add(dirLight);
-  scene.add(new THREE.AmbientLight(0x404040));
 
-  // Create a huge grassy terrain to simulate an infinite map
-  const terrainGeom = new THREE.PlaneGeometry(100000, 100000);
-  const terrainMat = new THREE.MeshPhongMaterial({ color: 0x228B22 });
-  const terrain = new THREE.Mesh(terrainGeom, terrainMat);
-  terrain.rotation.x = -Math.PI / 2;
-  scene.add(terrain);
+  // Create an enormous grassy ground (simulate an infinite map)
+  const groundGeom = new THREE.PlaneGeometry(100000, 100000);
+  const groundMat = new THREE.MeshPhongMaterial({ color: 0x228B22 });
+  const ground = new THREE.Mesh(groundGeom, groundMat);
+  ground.rotation.x = -Math.PI/2;
+  scene.add(ground);
 
-  // Create a long runway (20 x 1000) centered on the map
+  // Create a long runway (20 x 1000) with a slight elevation above the ground
   const runwayGeom = new THREE.PlaneGeometry(20, 1000);
   const runwayMat = new THREE.MeshPhongMaterial({ color: 0x333333 });
   const runway = new THREE.Mesh(runwayGeom, runwayMat);
-  runway.rotation.x = -Math.PI / 2;
+  runway.rotation.x = -Math.PI/2;
   runway.position.set(0, 0.01, 0);
   scene.add(runway);
-
-  // Add a dotted yellow center line to the runway
   createDottedLine(runway);
 
-  // Build the airplane (using a more refined blocky design)
+  // Build the airplane model (a simple blocky design)
   airplane = createAirplane();
   airplane.position.set(0, groundLevel, -400);
   scene.add(airplane);
 
-  // Add random blocky trees for reference and scale
+  // Add blocky trees for scale (optional)
   createTrees(100, 2000);
 
-  // Set up event listeners
+  // Set up event listeners for window resize and key input
   window.addEventListener('resize', onWindowResize, false);
   window.addEventListener('keydown', (e) => { keys[e.code] = true; }, false);
-  window.addEventListener('keyup',   (e) => { keys[e.code] = false; }, false);
+  window.addEventListener('keyup', (e) => { keys[e.code] = false; }, false);
 }
 
-// Create a dotted yellow center line on the runway
+// Create a simple airplane using boxes
+function createAirplane() {
+  const group = new THREE.Group();
+
+  // Fuselage: a central box
+  const fuselageGeom = new THREE.BoxGeometry(1, 0.3, 3);
+  const fuselageMat = new THREE.MeshPhongMaterial({ color: 0xff0000 });
+  const fuselage = new THREE.Mesh(fuselageGeom, fuselageMat);
+  group.add(fuselage);
+
+  // Wings: a wide, flat box
+  const wingGeom = new THREE.BoxGeometry(4, 0.1, 1);
+  const wingMat = new THREE.MeshPhongMaterial({ color: 0x0000ff });
+  const wing = new THREE.Mesh(wingGeom, wingMat);
+  wing.position.y = 0;
+  group.add(wing);
+
+  // Tail: a vertical stabilizer
+  const tailGeom = new THREE.BoxGeometry(0.2, 0.5, 1);
+  const tailMat = new THREE.MeshPhongMaterial({ color: 0xff0000 });
+  const tail = new THREE.Mesh(tailGeom, tailMat);
+  tail.position.set(0, 0.4, -1.5);
+  group.add(tail);
+
+  return group;
+}
+
+// Create a dotted yellow line along the center of the runway
 function createDottedLine(runway) {
   const segmentGeom = new THREE.BoxGeometry(0.3, 0.01, 2);
-  const segmentMat  = new THREE.MeshPhongMaterial({ color: 0xffff00 });
-  // Distribute segments along the runway from z=-490 to z=+490 (every 10 units)
+  const segmentMat = new THREE.MeshPhongMaterial({ color: 0xffff00 });
   for (let z = -490; z < 500; z += 10) {
     const segment = new THREE.Mesh(segmentGeom, segmentMat);
     segment.position.set(0, 0.02, z);
@@ -112,114 +146,54 @@ function createDottedLine(runway) {
   }
 }
 
-// Build an airplane using boxes and a cylinder. The plane's nose points +Z.
-function createAirplane() {
-  const planeGroup = new THREE.Group();
-
-  // Fuselage: three segments for a tapered shape
-  const bodyCenterGeom = new THREE.BoxGeometry(0.6, 0.6, 2.0);
-  const bodyCenterMat  = new THREE.MeshPhongMaterial({ color: 0xff0000 });
-  const bodyCenter = new THREE.Mesh(bodyCenterGeom, bodyCenterMat);
-  bodyCenter.position.set(0, 0, 0);
-  planeGroup.add(bodyCenter);
-
-  const noseGeom = new THREE.BoxGeometry(0.5, 0.5, 1.0);
-  const noseMat  = new THREE.MeshPhongMaterial({ color: 0xcc0000 });
-  const nose = new THREE.Mesh(noseGeom, noseMat);
-  nose.position.set(0, 0, 1.5);
-  planeGroup.add(nose);
-
-  const tailGeom = new THREE.BoxGeometry(0.4, 0.4, 1.0);
-  const tailMat  = new THREE.MeshPhongMaterial({ color: 0xaa0000 });
-  const tail = new THREE.Mesh(tailGeom, tailMat);
-  tail.position.set(0, 0, -1.5);
-  planeGroup.add(tail);
-
-  // Wings (one wide box)
-  const wingGeom = new THREE.BoxGeometry(4.0, 0.1, 0.8);
-  const wingMat  = new THREE.MeshPhongMaterial({ color: 0x0000ff });
-  const wing = new THREE.Mesh(wingGeom, wingMat);
-  wing.position.set(0, 0, 0);
-  planeGroup.add(wing);
-
-  // Horizontal stabilizer (tail wing)
-  const hStabGeom = new THREE.BoxGeometry(1.5, 0.1, 0.3);
-  const hStabMat  = new THREE.MeshPhongMaterial({ color: 0x0000ff });
-  const hStab = new THREE.Mesh(hStabGeom, hStabMat);
-  hStab.position.set(0, 0.1, -2.0);
-  planeGroup.add(hStab);
-
-  // Vertical stabilizer
-  const vStabGeom = new THREE.BoxGeometry(0.1, 0.6, 0.3);
-  const vStabMat  = new THREE.MeshPhongMaterial({ color: 0xff0000 });
-  const vStab = new THREE.Mesh(vStabGeom, vStabMat);
-  vStab.position.set(0, 0.35, -2.0);
-  planeGroup.add(vStab);
-
-  // Propeller (a small cylinder)
-  const propGeom = new THREE.CylinderGeometry(0.05, 0.05, 1.0);
-  const propMat  = new THREE.MeshPhongMaterial({ color: 0x888888 });
-  const prop = new THREE.Mesh(propGeom, propMat);
-  prop.rotation.z = Math.PI / 2;
-  prop.position.set(0, 0, 2.0);
-  planeGroup.add(prop);
-
-  return planeGroup;
-}
-
-// Create several blocky trees randomly distributed over a square region
-function createTrees(numTrees, width) {
-  for (let i = 0; i < numTrees; i++) {
-    const tree = makeBlockyTree();
-    let x = (Math.random() - 0.5) * width;
-    let z = (Math.random() - 0.5) * width;
-    // Avoid cluttering the runway area
-    while (Math.abs(x) < 20 && Math.abs(z) < 500) {
-      x = (Math.random() - 0.5) * width;
-      z = (Math.random() - 0.5) * width;
+// Create a set of simple blocky trees randomly scattered in an area
+function createTrees(num, area) {
+  for (let i = 0; i < num; i++) {
+    const tree = makeTree();
+    let x = (Math.random() - 0.5) * area;
+    let z = (Math.random() - 0.5) * area;
+    // Avoid placing trees in the runway area
+    if (Math.abs(x) < 20 && Math.abs(z) < 500) {
+      i--;
+      continue;
     }
     tree.position.set(x, 0, z);
     scene.add(tree);
   }
 }
 
-// Returns a Group representing a simple blocky tree (trunk + foliage)
-function makeBlockyTree() {
+function makeTree() {
   const group = new THREE.Group();
   const trunkGeom = new THREE.BoxGeometry(0.5, 2, 0.5);
-  const trunkMat  = new THREE.MeshPhongMaterial({ color: 0x8B4513 });
+  const trunkMat = new THREE.MeshPhongMaterial({ color: 0x8B4513 });
   const trunk = new THREE.Mesh(trunkGeom, trunkMat);
   trunk.position.y = 1;
   group.add(trunk);
-
   const foliageGeom = new THREE.BoxGeometry(2, 2, 2);
-  const foliageMat  = new THREE.MeshPhongMaterial({ color: 0x228B22 });
+  const foliageMat = new THREE.MeshPhongMaterial({ color: 0x228B22 });
   const foliage = new THREE.Mesh(foliageGeom, foliageMat);
   foliage.position.y = 3;
   group.add(foliage);
-
   return group;
 }
 
-// Adjust camera & renderer on window resize
 function onWindowResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
-// Main animation loop
 function animate() {
   requestAnimationFrame(animate);
-  handleControls();
-  updateAirplanePhysics();
+  updateControls();
+  updatePhysics();
   updateCamera();
   renderer.render(scene, camera);
 }
 
-// Handle keyboard inputs for throttle and rotation
-function handleControls() {
-  // Throttle control
+// Update control inputs and adjust airplane orientation accordingly
+function updateControls() {
+  // Throttle controls
   if (keys['ArrowUp']) {
     airplaneSpeed += airplaneAcceleration;
     if (airplaneSpeed > airplaneMaxSpeed) airplaneSpeed = airplaneMaxSpeed;
@@ -228,67 +202,78 @@ function handleControls() {
     airplaneSpeed -= airplaneAcceleration;
     if (airplaneSpeed < 0) airplaneSpeed = 0;
   }
-
+  
   // Pitch control:
-  // W: pitch nose down (increases rotation.x → reduces lift)
-  // S: pitch nose up (decreases rotation.x → increases lift)
+  // W => pitch nose down (increase rotation.x)
+  // S => pitch nose up (decrease rotation.x)
   if (keys['KeyW']) {
-    airplane.rotation.x += 0.01;
+    airplane.rotation.x += controlDelta;
   }
   if (keys['KeyS']) {
-    airplane.rotation.x -= 0.01;
+    airplane.rotation.x -= controlDelta;
   }
-  // Yaw control:
-  // A: turn left, D: turn right
+  
+  // Roll control:
+  // A => roll left (decrease rotation.z)
+  // D => roll right (increase rotation.z)
   if (keys['KeyA']) {
-    airplane.rotation.y -= 0.01;
+    airplane.rotation.z -= controlDelta;
   }
   if (keys['KeyD']) {
-    airplane.rotation.y += 0.01;
+    airplane.rotation.z += controlDelta;
   }
-
-  // Pitch damping: if neither W nor S are pressed, gently return to level (rotation.x = 0)
+  
+  // Automatic yaw: bank the plane in the direction of roll.
+  // A positive roll (right tilt) will turn the plane right and vice versa.
+  airplane.rotation.y += airplane.rotation.z * yawFactor;
+  
+  // Damping: when no input is given, gradually return pitch and roll to level (0)
   if (!keys['KeyW'] && !keys['KeyS']) {
-    airplane.rotation.x *= 0.98;
+    airplane.rotation.x *= pitchDamping;
+  }
+  if (!keys['KeyA'] && !keys['KeyD']) {
+    airplane.rotation.z *= rollDamping;
   }
 }
 
-// Update airplane physics: horizontal movement, lift, gravity, and altitude.
-function updateAirplanePhysics() {
-  // Compute forward (local +Z) direction and ignore any vertical component
-  let forward = new THREE.Vector3(0, 0, 1).applyQuaternion(airplane.quaternion);
-  forward.y = 0;
-  forward.normalize();
-  // Move airplane horizontally based on throttle
-  airplane.position.add(forward.multiplyScalar(airplaneSpeed));
-
-  // Compute effective pitch: negative rotation.x gives positive angle-of-attack (nose up)
-  let effectivePitch = -airplane.rotation.x;
-  // Clamp effective pitch to [0, 0.5] radians (approx. 0° to 28°)
-  effectivePitch = Math.max(Math.min(effectivePitch, 0.5), 0);
-  // Compute lift force proportional to speed^2 and effective pitch
-  const liftForce = liftFactor * airplaneSpeed * airplaneSpeed * effectivePitch;
-
-  // Net vertical acceleration = lift + gravity
-  const verticalAcc = liftForce + gravity;
+// Update airplane physics: horizontal movement (based on yaw) and vertical movement (based on pitch & gravity)
+function updatePhysics() {
+  // Horizontal movement: use yaw angle only.
+  const yaw = airplane.rotation.y;
+  const dx = Math.sin(yaw) * airplaneSpeed;
+  const dz = Math.cos(yaw) * airplaneSpeed;
+  airplane.position.x += dx;
+  airplane.position.z += dz;
+  
+  // Vertical movement:
+  // When the nose is up (rotation.x negative), we want to climb; when nose is down, descend.
+  // Compute vertical acceleration from pitch and gravity.
+  const verticalAcc = (-airplane.rotation.x * pitchInfluence) + gravity;
   verticalVelocity += verticalAcc;
-
-  // Update altitude using vertical velocity
   airplane.position.y += verticalVelocity;
-
-  // If the airplane reaches (or goes below) ground level, "land" it.
+  
+  // Prevent the airplane from going below ground level.
   if (airplane.position.y < groundLevel) {
     airplane.position.y = groundLevel;
     verticalVelocity = 0;
   }
 }
 
-// Update a third-person chase camera to follow the airplane
+// Update a simple chase camera that follows behind and above the airplane.
 function updateCamera() {
-  // Define an offset behind and above the plane in local space
-  const offset = new THREE.Vector3(0, 2, -8);
-  const worldOffset = offset.clone().applyMatrix4(airplane.matrixWorld);
-  camera.position.lerp(worldOffset, 0.1);
+  // Define an offset (in airplane-local space) for the camera.
+  const offset = new THREE.Vector3(0, 3, -10);
+  // Compute a rotated offset using the airplane's yaw.
+  const yaw = airplane.rotation.y;
+  const cosY = Math.cos(yaw);
+  const sinY = Math.sin(yaw);
+  const worldOffset = new THREE.Vector3(
+    offset.x * cosY - offset.z * sinY,
+    offset.y,
+    offset.x * sinY + offset.z * cosY
+  );
+  const desiredPos = new THREE.Vector3().copy(airplane.position).add(worldOffset);
+  camera.position.lerp(desiredPos, 0.1);
   camera.lookAt(airplane.position);
 }
 </script>
