@@ -26,13 +26,13 @@
     const airplane = new THREE.Group();
     scene.add(airplane);
 
-    // Create the airplane model (now visible) as a child of the airplane group.
-    // We build it so that its nose (the front) points along the negative Z axis.
+    // Create the airplane model (visible) as a child of the airplane group.
+    // Its geometry is built so that the nose (front) points along the negative Z axis.
     const airplaneModel = new THREE.Group();
     airplane.add(airplaneModel);
     airplaneModel.visible = true; // show the airplane model
 
-    // Fuselage: a red box 0.2 x 0.2 x 1.5, centered so that it spans from -0.75 (nose) to +0.75 (tail).
+    // Fuselage: a red box 0.2 x 0.2 x 1.5, centered (spanning from -0.75 to +0.75 along Z)
     const fuselageGeom = new THREE.BoxGeometry(0.2, 0.2, 1.5);
     const fuselageMat = new THREE.MeshLambertMaterial({ color: 0xff0000 });
     const fuselage = new THREE.Mesh(fuselageGeom, fuselageMat);
@@ -116,9 +116,8 @@
       scene.add(tree);
     }
 
-    // ── Camera Setup: Chase Camera ──
-    // Instead of attaching the camera to the airplane (which yielded a cockpit view looking backward),
-    // we create a chase camera that we update each frame.
+    // ── Camera Setup: Cockpit View ──
+    // We set up the camera so that it sits in front of the airplane (using a negative Z offset) and looks along its forward direction.
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
     scene.add(camera);
 
@@ -161,7 +160,7 @@
       }
 
       // ── Flight Controls ──
-      // Pitch: (W: nose down, S: nose up) – inverted from previous version.
+      // Pitch: (W: nose down, S: nose up)
       if (keys["KeyW"]) {
         airplane.rotateX(-rotationSpeed * delta);
       }
@@ -175,7 +174,7 @@
       if (keys["KeyD"]) {
         airplane.rotateZ(rotationSpeed * delta);
       }
-      // Automatic yaw based on roll (adjusted sign so a right roll yields a right yaw)
+      // Automatic yaw based on roll (adjusted so a right roll yields a right yaw)
       const roll = airplane.rotation.z;
       airplane.rotateY(-roll * yawRate * delta);
 
@@ -183,8 +182,7 @@
       const forward = new THREE.Vector3();
       airplane.getWorldDirection(forward);
       forward.normalize();
-      // The move vector applies throttle along the forward vector,
-      // boosts vertical movement when the nose is up (liftFactor), and subtracts gravity.
+      // Move vector applies throttle along forward, adds lift when nose is up, subtracts gravity.
       const move = new THREE.Vector3(
          forward.x * speed * delta,
          forward.y * speed * delta * liftFactor - gravity * delta,
@@ -192,19 +190,22 @@
       );
       airplane.position.add(move);
 
-      // Prevent the airplane from going below ground level.
+      // Prevent airplane from going below ground level.
       const groundLevel = 0.5;
       if (airplane.position.y < groundLevel) {
         airplane.position.y = groundLevel;
       }
 
-      // ── Update Chase Camera Position ──
-      // Offset behind (in local space, +Z is behind since the airplane's forward is –Z).
-      const chaseOffset = new THREE.Vector3(0, 2, 5);
-      chaseOffset.applyQuaternion(airplane.quaternion);
-      camera.position.copy(airplane.position).add(chaseOffset);
-      // Make the camera look at the airplane.
-      camera.lookAt(airplane.position);
+      // ── Update Cockpit Camera Position ──
+      // We offset the camera in front of the airplane.
+      const cockpitOffset = new THREE.Vector3(0, 2, -5);
+      cockpitOffset.applyQuaternion(airplane.quaternion);
+      camera.position.copy(airplane.position).add(cockpitOffset);
+      // Set the camera to look in the direction the airplane is facing.
+      const lookTarget = new THREE.Vector3();
+      airplane.getWorldDirection(lookTarget);
+      lookTarget.add(airplane.position);
+      camera.lookAt(lookTarget);
 
       renderer.render(scene, camera);
     }
