@@ -13,7 +13,7 @@
   <!-- Include Three.js from a CDN -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script>
-    // Set up scene, renderer, and camera
+    // ── Scene, Renderer, and World Setup ──
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x87CEEB); // sky blue
 
@@ -21,56 +21,42 @@
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
 
-    // Create a Group to represent the airplane (cockpit view at the origin)
+    // ── Airplane Group and Model ──
+    // The airplane group represents the plane’s position and orientation.
     const airplane = new THREE.Group();
     scene.add(airplane);
 
-    // Create a sub-group for the airplane model.
-    // We hide this model so that it doesn’t obstruct the cockpit view.
+    // Create the airplane model (now visible) as a child of the airplane group.
+    // We build it so that its nose (the front) points along the negative Z axis.
     const airplaneModel = new THREE.Group();
     airplane.add(airplaneModel);
-    airplaneModel.visible = false; // hide model from cockpit view
+    airplaneModel.visible = true; // show the airplane model
 
-    // ── Build the Airplane Model (simple shapes) ──
-    // Fuselage: long red box
-    // Translate the geometry so that the nose (front) is at the origin.
+    // Fuselage: a red box 0.2 x 0.2 x 1.5, centered so that it spans from -0.75 (nose) to +0.75 (tail).
     const fuselageGeom = new THREE.BoxGeometry(0.2, 0.2, 1.5);
-    fuselageGeom.translate(0, 0, -0.75);  // nose now at z = 0, tail at z = 1.5
     const fuselageMat = new THREE.MeshLambertMaterial({ color: 0xff0000 });
     const fuselage = new THREE.Mesh(fuselageGeom, fuselageMat);
     airplaneModel.add(fuselage);
 
-    // Wings: flat blue rectangle
+    // Wings: a flat blue rectangle centered on the fuselage.
     const wingGeom = new THREE.BoxGeometry(1.5, 0.05, 0.5);
     const wingMat = new THREE.MeshLambertMaterial({ color: 0x0000ff });
     const wing = new THREE.Mesh(wingGeom, wingMat);
-    // Position the wing so it attaches to the fuselage.
-    wing.position.set(0, 0, -0.75);
+    wing.position.set(0, 0, 0); // centered
     airplaneModel.add(wing);
 
-    // Tail: vertical stabilizer (red)
+    // Tail: vertical stabilizer placed at the tail end.
     const tailVertGeom = new THREE.BoxGeometry(0.1, 0.3, 0.05);
     const tailMat = new THREE.MeshLambertMaterial({ color: 0xff0000 });
     const tailVert = new THREE.Mesh(tailVertGeom, tailMat);
-    tailVert.position.set(0, 0.25, -0.5);
+    tailVert.position.set(0, 0.25, 0.75);
     airplaneModel.add(tailVert);
 
-    // Tail: horizontal stabilizer (red)
+    // Tail: horizontal stabilizer at the tail.
     const tailHorGeom = new THREE.BoxGeometry(0.5, 0.05, 0.05);
     const tailHor = new THREE.Mesh(tailHorGeom, tailMat);
-    tailHor.position.set(0, 0.2, -0.5);
+    tailHor.position.set(0, 0.2, 0.75);
     airplaneModel.add(tailHor);
-
-    // Offset the airplane model so that the cockpit (airplane origin) is at the front.
-    airplaneModel.position.set(0, 0, 0.75);
-
-    // ── Set Up the Cockpit Camera ──
-    // Attach the camera as a child of the airplane so it moves with it.
-    const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
-    airplane.add(camera);
-    // Position the camera at the cockpit (at the airplane's origin)
-    // This gives a view out the front (negative Z direction).
-    camera.position.set(0, 0.2, 0);
 
     // ── Lighting ──
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
@@ -79,8 +65,8 @@
     directionalLight.position.set(1, 1, 1);
     scene.add(directionalLight);
 
-    // ── Create the World ──
-    // Ground: a large flat green plane (grassy field)
+    // ── Ground and Runway ──
+    // Grassy field
     const groundGeom = new THREE.PlaneGeometry(2000, 2000);
     const groundMat = new THREE.MeshLambertMaterial({ color: 0x00aa00 });
     const ground = new THREE.Mesh(groundGeom, groundMat);
@@ -93,10 +79,10 @@
     const runwayMat = new THREE.MeshLambertMaterial({ color: 0x444444 });
     const runway = new THREE.Mesh(runwayGeom, runwayMat);
     runway.rotation.x = -Math.PI / 2;
-    runway.position.y = 0.01; // slight offset to avoid z-fighting with ground
+    runway.position.y = 0.01;
     scene.add(runway);
 
-    // Yellow dotted centerline on the runway
+    // Dotted centerline on the runway
     const numDashes = 20;
     const dashLength = 5;
     const dashSpacing = 5;
@@ -108,27 +94,33 @@
       scene.add(dash);
     }
 
-    // Add some blocky trees for scale
+    // Add some simple blocky trees for scale
     for (let i = 0; i < 30; i++) {
       const tree = new THREE.Group();
-      // Trunk (brown box)
+      // Trunk
       const trunkGeom = new THREE.BoxGeometry(0.5, 2, 0.5);
       const trunkMat = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
       const trunk = new THREE.Mesh(trunkGeom, trunkMat);
       trunk.position.y = 1;
       tree.add(trunk);
-      // Foliage (green box)
+      // Foliage
       const foliageGeom = new THREE.BoxGeometry(2, 2, 2);
       const foliageMat = new THREE.MeshLambertMaterial({ color: 0x00ff00 });
       const foliage = new THREE.Mesh(foliageGeom, foliageMat);
       foliage.position.y = 3;
       tree.add(foliage);
-      // Position the tree randomly on the field
+      // Random placement
       tree.position.x = Math.random() * 1800 - 900;
       tree.position.z = Math.random() * 1800 - 900;
       tree.position.y = 0;
       scene.add(tree);
     }
+
+    // ── Camera Setup: Chase Camera ──
+    // Instead of attaching the camera to the airplane (which yielded a cockpit view looking backward),
+    // we create a chase camera that we update each frame.
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+    scene.add(camera);
 
     // ── Handle Window Resize ──
     window.addEventListener('resize', () => {
@@ -137,29 +129,28 @@
       renderer.setSize(window.innerWidth, window.innerHeight);
     });
 
-    // ── Input Handling & Flight Physics ──
+    // ── Input Handling and Flight Physics ──
     const keys = {};
     document.addEventListener('keydown', (e) => { keys[e.code] = true; });
     document.addEventListener('keyup', (e) => { keys[e.code] = false; });
 
     // Flight parameters
-    let speed = 0;         // start at 0 (stationary)
+    let speed = 0;           // Start stationary
     const minSpeed = 0;
     const maxSpeed = 50;
-    const acceleration = 10;  // throttle change (units/second^2)
-    const rotationSpeed = Math.PI / 4; // radians per second (45°/sec)
-    const yawRate = 0.5;    // yaw factor based on current roll
-    const gravity = 9.8;    // gravitational acceleration (units/second^2)
-    const liftFactor = 5;   // extra lift boost when nose is up
+    const acceleration = 10; // Throttle change (units/second²)
+    const rotationSpeed = Math.PI / 4; // 45° per second
+    const yawRate = 0.5;     // Automatic yaw factor
+    const gravity = 9.8;     // Gravity (units/second²)
+    const liftFactor = 5;    // Lift multiplier when nose is up
 
     const clock = new THREE.Clock();
 
-    // ── Animation Loop ──
     function animate() {
       requestAnimationFrame(animate);
       const delta = clock.getDelta();
 
-      // Update throttle with arrow keys
+      // ── Throttle Control (Arrow Up/Down) ──
       if (keys["ArrowUp"]) {
         speed += acceleration * delta;
         if (speed > maxSpeed) speed = maxSpeed;
@@ -169,32 +160,31 @@
         if (speed < minSpeed) speed = minSpeed;
       }
 
-      // Update pitch controls following natural aviation:
-      // W: Pitch nose down, S: Pitch nose up.
-      if (keys["KeyW"]) { 
+      // ── Flight Controls ──
+      // Pitch: (W: nose down, S: nose up) – inverted from previous version.
+      if (keys["KeyW"]) {
         airplane.rotateX(-rotationSpeed * delta);
       }
       if (keys["KeyS"]) {
         airplane.rotateX(rotationSpeed * delta);
       }
-
-      // Update roll controls
+      // Roll: (A: roll left, D: roll right)
       if (keys["KeyA"]) {
         airplane.rotateZ(-rotationSpeed * delta);
       }
       if (keys["KeyD"]) {
         airplane.rotateZ(rotationSpeed * delta);
       }
-
-      // Automatic yaw based on roll:
+      // Automatic yaw based on roll (adjusted sign so a right roll yields a right yaw)
       const roll = airplane.rotation.z;
       airplane.rotateY(-roll * yawRate * delta);
 
-      // Compute forward movement:
+      // ── Forward Motion with Lift and Gravity ──
       const forward = new THREE.Vector3();
       airplane.getWorldDirection(forward);
       forward.normalize();
-      // Separate horizontal and vertical components.
+      // The move vector applies throttle along the forward vector,
+      // boosts vertical movement when the nose is up (liftFactor), and subtracts gravity.
       const move = new THREE.Vector3(
          forward.x * speed * delta,
          forward.y * speed * delta * liftFactor - gravity * delta,
@@ -202,11 +192,19 @@
       );
       airplane.position.add(move);
 
-      // Prevent airplane from going below a minimum altitude (ground level)
+      // Prevent the airplane from going below ground level.
       const groundLevel = 0.5;
       if (airplane.position.y < groundLevel) {
         airplane.position.y = groundLevel;
       }
+
+      // ── Update Chase Camera Position ──
+      // Offset behind (in local space, +Z is behind since the airplane's forward is –Z).
+      const chaseOffset = new THREE.Vector3(0, 2, 5);
+      chaseOffset.applyQuaternion(airplane.quaternion);
+      camera.position.copy(airplane.position).add(chaseOffset);
+      // Make the camera look at the airplane.
+      camera.lookAt(airplane.position);
 
       renderer.render(scene, camera);
     }
