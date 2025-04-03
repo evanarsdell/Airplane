@@ -21,19 +21,21 @@
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
 
-    // Create a Group to represent the airplane
+    // Create a Group to represent the airplane (cockpit view at the origin)
     const airplane = new THREE.Group();
     scene.add(airplane);
 
     // Create a sub-group for the airplane model.
-    // We later hide this group so the cockpit view isn’t obstructed.
+    // We hide this model so that it doesn’t obstruct the cockpit view.
     const airplaneModel = new THREE.Group();
     airplane.add(airplaneModel);
     airplaneModel.visible = false; // hide model from cockpit view
 
     // ── Build the Airplane Model (simple shapes) ──
     // Fuselage: long red box
+    // Translate the geometry so that the nose (front) is at the origin.
     const fuselageGeom = new THREE.BoxGeometry(0.2, 0.2, 1.5);
+    fuselageGeom.translate(0, 0, -0.75);  // nose now at z = 0, tail at z = 1.5
     const fuselageMat = new THREE.MeshLambertMaterial({ color: 0xff0000 });
     const fuselage = new THREE.Mesh(fuselageGeom, fuselageMat);
     airplaneModel.add(fuselage);
@@ -42,27 +44,32 @@
     const wingGeom = new THREE.BoxGeometry(1.5, 0.05, 0.5);
     const wingMat = new THREE.MeshLambertMaterial({ color: 0x0000ff });
     const wing = new THREE.Mesh(wingGeom, wingMat);
-    wing.position.set(0, 0, 0);
+    // Position the wing so it attaches to the fuselage.
+    wing.position.set(0, 0, -0.75);
     airplaneModel.add(wing);
 
     // Tail: vertical stabilizer (red)
     const tailVertGeom = new THREE.BoxGeometry(0.1, 0.3, 0.05);
     const tailMat = new THREE.MeshLambertMaterial({ color: 0xff0000 });
     const tailVert = new THREE.Mesh(tailVertGeom, tailMat);
-    tailVert.position.set(0, 0.25, 0.75);
+    tailVert.position.set(0, 0.25, -0.5);
     airplaneModel.add(tailVert);
 
     // Tail: horizontal stabilizer (red)
     const tailHorGeom = new THREE.BoxGeometry(0.5, 0.05, 0.05);
     const tailHor = new THREE.Mesh(tailHorGeom, tailMat);
-    tailHor.position.set(0, 0.2, 0.75);
+    tailHor.position.set(0, 0.2, -0.5);
     airplaneModel.add(tailHor);
+
+    // Offset the airplane model so that the cockpit (airplane origin) is at the front.
+    airplaneModel.position.set(0, 0, 0.75);
 
     // ── Set Up the Cockpit Camera ──
     // Attach the camera as a child of the airplane so it moves with it.
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
     airplane.add(camera);
-    // Position the camera at the “pilot’s head” (offset slightly back and up)
+    // Position the camera at the cockpit (at the airplane's origin)
+    // This gives a view out the front (negative Z direction).
     camera.position.set(0, 0.2, 0);
 
     // ── Lighting ──
@@ -136,13 +143,14 @@
     document.addEventListener('keyup', (e) => { keys[e.code] = false; });
 
     // Flight parameters
-    let speed = 10;         // current throttle (units/second)
+    let speed = 0;         // start at 0 (stationary)
     const minSpeed = 0;
     const maxSpeed = 50;
     const acceleration = 10;  // throttle change (units/second^2)
     const rotationSpeed = Math.PI / 4; // radians per second (45°/sec)
     const yawRate = 0.5;    // yaw factor based on current roll
     const gravity = 9.8;    // gravitational acceleration (units/second^2)
+    const liftFactor = 5;   // extra lift boost when nose is up
 
     const clock = new THREE.Clock();
 
@@ -161,42 +169,38 @@
         if (speed < minSpeed) speed = minSpeed;
       }
 
-      // Update pitch controls (inverted so that pressing W makes the plane dive)
+      // Update pitch controls following natural aviation:
+      // W: Pitch nose down, S: Pitch nose up.
       if (keys["KeyW"]) { 
-        // Pitch nose down (rotate -X so that forward vector gets a downward y component)
         airplane.rotateX(-rotationSpeed * delta);
       }
       if (keys["KeyS"]) {
-        // Pitch nose up (rotate +X)
         airplane.rotateX(rotationSpeed * delta);
       }
 
       // Update roll controls
       if (keys["KeyA"]) {
-        // Roll left (rotate -Z)
         airplane.rotateZ(-rotationSpeed * delta);
       }
       if (keys["KeyD"]) {
-        // Roll right (rotate +Z)
         airplane.rotateZ(rotationSpeed * delta);
       }
 
       // Automatic yaw based on roll:
-      // Use the current roll (airplane.rotation.z) to gradually yaw the plane.
       const roll = airplane.rotation.z;
       airplane.rotateY(-roll * yawRate * delta);
 
       // Compute forward movement:
-      // Get the airplane's forward (negative Z in its local space)
       const forward = new THREE.Vector3();
       airplane.getWorldDirection(forward);
       forward.normalize();
-      // Scale forward movement by current speed and delta
-      forward.multiplyScalar(speed * delta);
-      // Add gravity (always pulls downward in world space)
-      forward.y -= gravity * delta;
-      // Update airplane position
-      airplane.position.add(forward);
+      // Separate horizontal and vertical components.
+      const move = new THREE.Vector3(
+         forward.x * speed * delta,
+         forward.y * speed * delta * liftFactor - gravity * delta,
+         forward.z * speed * delta
+      );
+      airplane.position.add(move);
 
       // Prevent airplane from going below a minimum altitude (ground level)
       const groundLevel = 0.5;
