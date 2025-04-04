@@ -5,12 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>3D Airplane Flying Game</title>
   <style>
-    /* Basic reset & full-screen canvas */
+    /* Fullscreen reset and sky-blue background */
     html, body {
       margin: 0;
       padding: 0;
       overflow: hidden;
-      background: #87ceeb; /* sky-blue background */
+      background: #87ceeb;
+      touch-action: none;
     }
     #gameContainer {
       position: absolute;
@@ -22,14 +23,13 @@
     canvas {
       display: block;
     }
-    /* Virtual joystick touch zones */
+    /* Transparent touch zones for virtual joysticks */
     .joystick {
       position: absolute;
       top: 0;
       bottom: 0;
       width: 50%;
       z-index: 10;
-      touch-action: none;
     }
     #leftJoystick {
       left: 0;
@@ -37,7 +37,7 @@
     #rightJoystick {
       right: 0;
     }
-    /* Overlay message if in portrait (force landscape) */
+    /* Message overlay for portrait mode */
     #rotateMessage {
       display: none;
       position: absolute;
@@ -62,7 +62,7 @@
 <body>
   <div id="gameContainer"></div>
   <div id="rotateMessage">Please rotate your device to landscape mode.</div>
-  <!-- Virtual joystick zones (transparent) -->
+  <!-- Virtual joystick touch zones -->
   <div id="leftJoystick" class="joystick"></div>
   <div id="rightJoystick" class="joystick"></div>
   
@@ -73,31 +73,28 @@
     let scene, camera, renderer;
     let airplane, airplaneModel;
     let lastTime = performance.now();
-    const groundLevel = 1; // minimal altitude
-    const maxSpeed = 0.5;  // maximum speed factor
-    let throttle = 0.5;    // initial throttle value [0,1]
-    const minThrottle = 0;
-    const maxThrottle = 1;
-    const gravity = 0.01;  // extra gravity factor when throttle is low
-    const rollFactor = 0.005;   // sensitivity for roll (Z-axis)
-    const pitchFactor = 0.005;  // sensitivity for pitch (X-axis)
-    const yawFactor = 0.002;    // passive yaw factor based on roll
+    const groundLevel = 1;     // Minimal altitude
+    const maxSpeed = 0.5;      // Maximum speed factor
+    let throttle = 0.5;        // Initial throttle value [0,1]
+    const gravity = 0.005;     // Gravity factor (applied when throttle is low)
+    // Control sensitivity factors
+    const rollFactor = 0.02;
+    const pitchFactor = 0.02;
+    const yawFactor = 0.01;
     
-    // Touch input variables for the virtual joysticks
+    // Touch input variables for virtual joysticks
     let leftStart = null;
     let leftDelta = { x: 0, y: 0 };
     let rightStart = null;
     let rightDelta = { x: 0, y: 0 };
-    const maxDelta = 50; // maximum pixel movement for normalizing input
+    const maxDelta = 50; // Maximum pixel movement used to normalize input
     
-    // Computed flight control inputs (per frame)
-    let rollInput = 0;
-    let pitchInput = 0;
+    // Utility: clamp a value between min and max
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
     
     // ----- Initialization -----
-    init();
-    animate();
-    
     function init() {
       // Create scene and set sky-blue background
       scene = new THREE.Scene();
@@ -114,34 +111,36 @@
       
       // Attach a perspective camera to the airplane for cockpit view.
       // Camera is offset to be slightly above and behind the airplane’s origin.
-      camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 2000);
+      camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 5000);
       camera.position.set(0, 2, -5);
       airplane.add(camera);
       
       // ----- Airplane Model -----
       // Construct a simple airplane from basic shapes.
-      // Fuselage: red box.
       airplaneModel = new THREE.Group();
+      
+      // Fuselage: red box (shifted forward so the nose points in positive Z)
       let fuselageGeom = new THREE.BoxGeometry(1, 0.5, 3);
       let fuselageMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
       let fuselage = new THREE.Mesh(fuselageGeom, fuselageMat);
-      fuselage.position.set(0, 0, 1.5); // nose forward
+      fuselage.position.set(0, 0, 1.5);
       airplaneModel.add(fuselage);
       
-      // Wings: blue flat rectangle.
+      // Wings: blue flat rectangle
       let wingGeom = new THREE.BoxGeometry(3, 0.1, 0.5);
       let wingMat = new THREE.MeshBasicMaterial({ color: 0x0000ff });
       let wing = new THREE.Mesh(wingGeom, wingMat);
       wing.position.set(0, 0, 1);
       airplaneModel.add(wing);
       
-      // Tail: vertical stabilizer (red) and horizontal stabilizer (blue).
+      // Tail vertical stabilizer: red
       let tailVertGeom = new THREE.BoxGeometry(0.2, 0.5, 0.2);
       let tailVertMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
       let tailVert = new THREE.Mesh(tailVertGeom, tailVertMat);
       tailVert.position.set(0, 0.5, -1);
       airplaneModel.add(tailVert);
       
+      // Tail horizontal stabilizer: blue
       let tailHorzGeom = new THREE.BoxGeometry(0.8, 0.1, 0.2);
       let tailHorzMat = new THREE.MeshBasicMaterial({ color: 0x0000ff });
       let tailHorz = new THREE.Mesh(tailHorzGeom, tailHorzMat);
@@ -153,13 +152,155 @@
       airplane.add(airplaneModel);
       
       // ----- World Construction -----
-      // Terrain: a large flat green plane simulating grass.
+      // Terrain: a large flat green plane to simulate grass.
       let terrainGeom = new THREE.PlaneGeometry(1000, 1000);
       let terrainMat = new THREE.MeshBasicMaterial({ color: 0x228B22 });
       let terrain = new THREE.Mesh(terrainGeom, terrainMat);
       terrain.rotation.x = -Math.PI / 2;
-      terrain.position.y = groundLevel - 0.01; // just below ground level
+      terrain.position.y = groundLevel - 0.01;
       scene.add(terrain);
       
-      // Runway: a dark grey plane.
-      let runwayGeom = new THREE.Pl
+      // Runway: dark grey plane at the center
+      let runwayWidth = 10;
+      let runwayLength = 200;
+      let runwayGeom = new THREE.PlaneGeometry(runwayWidth, runwayLength);
+      let runwayMat = new THREE.MeshBasicMaterial({ color: 0x555555 });
+      let runway = new THREE.Mesh(runwayGeom, runwayMat);
+      runway.rotation.x = -Math.PI / 2;
+      runway.position.y = groundLevel + 0.01;
+      scene.add(runway);
+      
+      // Dashed centerline on the runway (constructed from box segments)
+      for (let i = -runwayLength/2; i < runwayLength/2; i += 15) {
+        let dashGeom = new THREE.BoxGeometry(1, 0.02, 5);
+        let dashMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+        let dash = new THREE.Mesh(dashGeom, dashMat);
+        dash.rotation.x = -Math.PI / 2;
+        dash.position.set(0, groundLevel + 0.02, i + 7.5);
+        scene.add(dash);
+      }
+      
+      // Add blocky trees (brown trunk with green cube foliage) at random positions
+      for (let i = 0; i < 50; i++) {
+        let x = Math.random() * 1000 - 500;
+        let z = Math.random() * 1000 - 500;
+        // Avoid the runway area
+        if (Math.abs(x) < runwayWidth/2 + 10 && z > -runwayLength/2 && z < runwayLength/2) continue;
+        
+        // Tree trunk
+        let trunkGeom = new THREE.BoxGeometry(1, 3, 1);
+        let trunkMat = new THREE.MeshBasicMaterial({ color: 0x8B4513 });
+        let trunk = new THREE.Mesh(trunkGeom, trunkMat);
+        trunk.position.set(x, groundLevel + 1.5, z);
+        scene.add(trunk);
+        
+        // Tree foliage
+        let foliageGeom = new THREE.BoxGeometry(3, 3, 3);
+        let foliageMat = new THREE.MeshBasicMaterial({ color: 0x00aa00 });
+        let foliage = new THREE.Mesh(foliageGeom, foliageMat);
+        foliage.position.set(x, groundLevel + 4.5, z);
+        scene.add(foliage);
+      }
+      
+      window.addEventListener('resize', onWindowResize, false);
+      
+      // Set up touch event listeners for virtual joysticks
+      setupJoystick('leftJoystick', true);
+      setupJoystick('rightJoystick', false);
+    }
+    
+    // Update camera and renderer on window resize
+    function onWindowResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+    
+    // Set up touch event listeners on a joystick element.
+    // For the left joystick, we track both horizontal (roll) and vertical (throttle) movement.
+    // For the right joystick, we track vertical movement (pitch).
+    function setupJoystick(id, isLeft) {
+      const joystick = document.getElementById(id);
+      joystick.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        const touch = e.changedTouches[0];
+        if (isLeft) {
+          leftStart = { x: touch.clientX, y: touch.clientY };
+        } else {
+          rightStart = { x: touch.clientX, y: touch.clientY };
+        }
+      }, { passive: false });
+      
+      joystick.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        const touch = e.changedTouches[0];
+        if (isLeft && leftStart) {
+          leftDelta.x = clamp(touch.clientX - leftStart.x, -maxDelta, maxDelta);
+          leftDelta.y = clamp(touch.clientY - leftStart.y, -maxDelta, maxDelta);
+        } else if (!isLeft && rightStart) {
+          rightDelta.x = clamp(touch.clientX - rightStart.x, -maxDelta, maxDelta);
+          rightDelta.y = clamp(touch.clientY - rightStart.y, -maxDelta, maxDelta);
+        }
+      }, { passive: false });
+      
+      joystick.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        if (isLeft) {
+          leftStart = null;
+          leftDelta.x = 0;
+          leftDelta.y = 0;
+        } else {
+          rightStart = null;
+          rightDelta.x = 0;
+          rightDelta.y = 0;
+        }
+      }, { passive: false });
+    }
+    
+    // ----- Animation Loop -----
+    function animate() {
+      requestAnimationFrame(animate);
+      let now = performance.now();
+      let dt = (now - lastTime) / 1000; // Delta time in seconds
+      lastTime = now;
+      
+      // Normalize joystick inputs to the range [-1, 1]
+      let rollInput = clamp(leftDelta.x / maxDelta, -1, 1);
+      let throttleInput = clamp(-leftDelta.y / maxDelta, -1, 1); // Negative so that an upward swipe increases throttle
+      let pitchInput = clamp(rightDelta.y / maxDelta, -1, 1);
+      
+      // Gradually update throttle (clamped between 0 and 1)
+      throttle += throttleInput * 0.01;
+      throttle = clamp(throttle, 0, 1);
+      
+      // Compute a movement multiplier based on delta time (simulate ~60fps)
+      let movementFactor = dt * 60;
+      
+      // Apply control rotations:
+      // Roll: rotate about Z axis (negative sign to roll right when joystick is moved right)
+      airplane.rotateZ(-rollInput * rollFactor * movementFactor);
+      // Pitch: rotate about X axis (positive value for nose-down if joystick is moved down)
+      airplane.rotateX(pitchInput * pitchFactor * movementFactor);
+      // Passive yaw: automatically turn around Y axis based on roll input
+      airplane.rotateY(rollInput * yawFactor * movementFactor);
+      
+      // Move airplane forward along its local Z-axis
+      airplane.translateZ(throttle * maxSpeed * movementFactor);
+      
+      // Apply a simple gravity effect if throttle is low (simulate gradual descent)
+      if (throttle < 0.3) {
+        airplane.position.y -= gravity * movementFactor;
+      }
+      // Prevent airplane from sinking below ground level
+      if (airplane.position.y < groundLevel) {
+        airplane.position.y = groundLevel;
+      }
+      
+      renderer.render(scene, camera);
+    }
+    
+    init();
+    animate();
+  </script>
+</body>
+</html>
