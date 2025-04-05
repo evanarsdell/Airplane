@@ -2,474 +2,486 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <!-- Mobile Responsiveness -->
+  <title>Mobile Flight Simulator</title>
+  <!-- Meta viewport for mobile responsiveness -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Enhanced Mobile 2.5D Flight Simulator</title>
   <style>
-    /* Reset defaults */
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body {
-      width: 100%;
-      height: 100%;
+    /* Remove default margins and hide overflow */
+    body, html {
+      margin: 0;
+      padding: 0;
       overflow: hidden;
       background: #000;
       font-family: sans-serif;
     }
-    /* Full-screen canvas */
+    /* Fullscreen canvas */
     #gameCanvas {
       display: block;
-      width: 100%;
-      height: 100%;
-      background: #000;
     }
-    /* Overlay message in portrait mode */
-    @media only screen and (orientation: portrait) {
-      body::before {
-        content: "Please rotate your device to landscape mode for best experience";
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        color: #fff;
-        font-size: 1.5em;
-        z-index: 1000;
-      }
-    }
-    /* Throttle UI styling */
-    #throttleControl {
-      position: fixed;
-      bottom: 20px;
-      right: 20px;
-      width: 80px;
-      height: 80px;
-      background: rgba(255,255,255,0.8);
-      border-radius: 50%;
-      border: 2px solid #333;
-      text-align: center;
-      line-height: 80px;
-      font-weight: bold;
-      user-select: none;
-      z-index: 20;
-      touch-action: none;
-    }
-    /* HUD styling */
-    #hud {
-      position: fixed;
-      top: 10px;
-      left: 10px;
+    /* Orientation overlay: show message in portrait mode */
+    #orientationOverlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0,0,0,0.85);
       color: #fff;
-      background: rgba(0,0,0,0.5);
-      padding: 5px 10px;
-      border-radius: 5px;
-      z-index: 20;
-      font-size: 14px;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      z-index: 10;
+      padding: 20px;
+      box-sizing: border-box;
+    }
+    /* Game Over overlay */
+    #gameOverOverlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0, 0, 0, 0.8);
+      color: #fff;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      z-index: 11;
+      flex-direction: column;
+    }
+    #gameOverOverlay h1 {
+      font-size: 48px;
+      margin: 0;
+    }
+    #gameOverOverlay p {
+      font-size: 24px;
+      margin: 10px 0 0;
     }
   </style>
 </head>
 <body>
-  <!-- Canvas for the game rendering -->
+  <!-- Canvas where all game visuals are drawn -->
   <canvas id="gameCanvas"></canvas>
-  <!-- Throttle control UI -->
-  <div id="throttleControl">0%</div>
-  <!-- On-screen HUD -->
-  <div id="hud">Speed: 0<br>Altitude: 0<br>Throttle: 0%</div>
-
+  
+  <!-- Overlay message for portrait orientation -->
+  <div id="orientationOverlay">
+    <h2>Please rotate your device to landscape</h2>
+  </div>
+  
+  <!-- Game Over overlay with tap-to-restart -->
+  <div id="gameOverOverlay">
+    <h1>Game Over</h1>
+    <p>Tap to Restart</p>
+  </div>
+  
   <script>
-    "use strict";
-
-    /**********************************
-     * Utility Functions
-     **********************************/
-    function clamp(value, min, max) {
-      return Math.min(Math.max(value, min), max);
-    }
-
-    /**********************************
-     * InputHandler Module
-     * - Reads DeviceOrientation for pitch and roll.
-     * - Processes touch events on the throttle control.
-     **********************************/
-    class InputHandler {
-      constructor(throttleElement) {
-        this.pitch = 0; // Degrees: positive = nose down, negative = nose up
-        this.roll = 0;  // Degrees: positive = tilt right, negative = tilt left
-        this.deadZone = 3; // Ignore small movements to reduce jitter
-        this.throttle = 0; // 0 to 100%
-        this.throttleElement = throttleElement;
-        this.initOrientation();
-        this.initThrottle();
-      }
-      
-      // Listen for device orientation events
-      initOrientation() {
-        if (window.DeviceOrientationEvent) {
-          window.addEventListener('deviceorientation', (event) => {
-            // event.beta: pitch; event.gamma: roll
-            let rawPitch = event.beta || 0;
-            let rawRoll = event.gamma || 0;
-            this.pitch = (Math.abs(rawPitch) > this.deadZone) ? rawPitch : 0;
-            this.roll = (Math.abs(rawRoll) > this.deadZone) ? rawRoll : 0;
-          }, true);
-        } else {
-          console.warn("DeviceOrientationEvent is not supported by your browser.");
-        }
-      }
-      
-      // Set up touch events for throttle control
-      initThrottle() {
-        let startY = 0;
-        let initialThrottle = this.throttle;
-        const onTouchStart = (e) => {
-          e.preventDefault();
-          startY = e.touches[0].clientY;
-          initialThrottle = this.throttle;
-        };
-        const onTouchMove = (e) => {
-          e.preventDefault();
-          let currentY = e.touches[0].clientY;
-          let delta = startY - currentY; // Up swipe increases throttle
-          const sensitivity = 0.2; // Adjust how fast throttle changes
-          this.throttle = clamp(initialThrottle + delta * sensitivity, 0, 100);
-          this.updateThrottleUI();
-        };
-        this.throttleElement.addEventListener("touchstart", onTouchStart, false);
-        this.throttleElement.addEventListener("touchmove", onTouchMove, false);
-        // Allow mouse click for desktop testing
-        this.throttleElement.addEventListener("click", () => {
-          this.throttle = (this.throttle + 10) % 110;
-          this.updateThrottleUI();
+    /* ========= GameEngine ========= */
+    class GameEngine {
+      constructor() {
+        this.canvas = document.getElementById('gameCanvas');
+        this.ctx = this.canvas.getContext('2d');
+        this.lastTime = performance.now();
+        this.deltaTime = 0;
+        this.gameState = 'active'; // 'active' or 'gameOver'
+        
+        // Initialize modules
+        this.inputHandler = new InputHandler(this.canvas);
+        this.physicsEngine = new PhysicsEngine();
+        this.renderer = new Renderer(this.canvas, this.ctx);
+        this.uiController = new UIController(this.canvas, this.ctx, this.inputHandler);
+        
+        // Event listeners for resize and orientation change
+        window.addEventListener('resize', this.onResize.bind(this));
+        window.addEventListener('orientationchange', this.onResize.bind(this));
+        this.onResize();
+        
+        // Bind restart on tap of game over overlay
+        document.getElementById('gameOverOverlay').addEventListener('click', () => {
+          this.restart();
         });
       }
       
-      updateThrottleUI() {
-        this.throttleElement.innerText = Math.round(this.throttle) + "%";
-      }
-    }
-
-    /**********************************
-     * PhysicsEngine Module
-     * - Simulates flight dynamics (forward motion, altitude, lift, drag, gravity).
-     * - Updates aircraft state based on throttle and orientation input.
-     **********************************/
-    class PhysicsEngine {
-      constructor() {
-        // Position: x = forward distance, y = altitude (start high so you can descend)
-        this.position = { x: 0, y: 100 };
-        this.velocity = { x: 0, y: 0 };
-        this.acceleration = { x: 0, y: 0 };
-        // Physics constants
-        this.gravity = 0.3;      // Constant downward acceleration
-        this.liftFactor = 0.1;   // Lift produced per degree of pitch (adjust sign as needed)
-        this.dragFactor = 0.005; // Simulated drag factor
-        this.enginePower = 0.5;  // Thrust multiplier based on throttle input
+      start() {
+        requestAnimationFrame(this.gameLoop.bind(this));
       }
       
-      update(deltaTime, input) {
-        // Forward thrust: throttle force minus drag
-        let throttleForce = input.throttle * this.enginePower * 0.01;
-        this.acceleration.x = throttleForce - (this.dragFactor * this.velocity.x);
+      gameLoop(timestamp) {
+        // Calculate delta time in seconds
+        this.deltaTime = (timestamp - this.lastTime) / 1000;
+        this.lastTime = timestamp;
         
-        // Vertical acceleration: lift (negative pitch gives upward force) minus gravity and drag
-        // Note: A positive pitch (nose down) reduces lift.
-        let lift = -input.pitch * this.liftFactor;
-        this.acceleration.y = lift - this.gravity - (this.dragFactor * this.velocity.y);
-        
-        // Update velocity and position (Euler integration)
-        this.velocity.x += this.acceleration.x * deltaTime;
-        this.velocity.y += this.acceleration.y * deltaTime;
-        this.position.x += this.velocity.x * deltaTime;
-        this.position.y += this.velocity.y * deltaTime;
-        
-        // Prevent aircraft from going below ground level (altitude 0)
-        if (this.position.y < 0) {
-          this.position.y = 0;
-          this.velocity.y = 0;
+        if (this.gameState === 'active') {
+          // Update input and physics
+          this.inputHandler.update();
+          this.physicsEngine.update(this.deltaTime, this.inputHandler);
+          // Crash detection: if altitude goes below zero
+          if (this.physicsEngine.aircraft.altitude <= 0) {
+            this.gameState = 'gameOver';
+            document.getElementById('gameOverOverlay').style.display = 'flex';
+          }
         }
-      }
-    }
-
-    /**********************************
-     * Renderer Module
-     * - Renders the 2.5D environment using canvas.
-     * - Applies a camera transformation based on the aircraft's pitch and slight roll.
-     **********************************/
-    class Renderer {
-      constructor(canvas, physics) {
-        this.canvas = canvas;
-        this.ctx = canvas.getContext("2d");
-        this.physics = physics;
-        this.structures = this.generateStructures(20);
-        this.resize();
-        window.addEventListener("resize", () => this.resize());
+        
+        // Clear canvas
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        // Render the game world
+        this.renderer.render(this.physicsEngine.aircraft, this.inputHandler);
+        // Render the on-screen UI elements
+        this.uiController.render(this.physicsEngine.aircraft);
+        // Check orientation and show overlay if needed
+        this.checkOrientation();
+        
+        requestAnimationFrame(this.gameLoop.bind(this));
       }
       
-      // Adjust canvas to fit the window
-      resize() {
+      onResize() {
+        // Set canvas to fill the window
         this.canvas.width = window.innerWidth;
         this.canvas.height = window.innerHeight;
+        this.renderer.onResize();
+        this.uiController.onResize();
+        this.checkOrientation();
       }
       
-      // Create random environmental structures for parallax effect
-      generateStructures(count) {
-        const types = ["rect", "circle", "triangle"];
-        const colors = ["#8B4513", "#A0522D", "#556B2F"];
-        let structures = [];
-        for (let i = 0; i < count; i++) {
-          structures.push({
-            x: Math.random() * window.innerWidth,
-            // y here represents distance from the camera (0 = near, higher = further away)
-            y: 50 + Math.random() * 300,
-            size: 20 + Math.random() * 30,
-            type: types[Math.floor(Math.random() * types.length)],
-            color: colors[Math.floor(Math.random() * colors.length)]
-          });
+      checkOrientation() {
+        let overlay = document.getElementById('orientationOverlay');
+        if(window.innerWidth < window.innerHeight) {
+          overlay.style.display = 'flex';
+        } else {
+          overlay.style.display = 'none';
         }
-        return structures;
       }
       
-      // Render the entire scene
-      render(input) {
-        const ctx = this.ctx;
-        const w = this.canvas.width;
-        const h = this.canvas.height;
+      restart() {
+        // Reset physics and input states
+        this.physicsEngine.reset();
+        this.inputHandler.reset();
+        this.gameState = 'active';
+        document.getElementById('gameOverOverlay').style.display = 'none';
+      }
+    }
+    
+    /* ========= InputHandler ========= */
+    class InputHandler {
+      constructor(canvas) {
+        this.canvas = canvas;
+        // Current input state values
+        this.pitch = 0; // in degrees (device beta)
+        this.roll = 0;  // in degrees (device gamma)
+        this.throttle = 50; // percentage (0 to 100)
         
-        // Clear the canvas
-        ctx.clearRect(0, 0, w, h);
+        // Throttle drag handling
+        this.throttleDragging = false;
+        this.throttleStartY = 0;
+        this.throttleStartValue = 50;
         
-        // Save current state and apply a camera transformation
-        ctx.save();
-        // Shift the horizon based on pitch (nosedown shifts horizon downwards)
-        const pitchOffset = input.pitch * 2;
-        // Apply a subtle roll rotation to the entire scene (for immersive effect)
-        const rollAngle = input.roll * Math.PI / 180 * 0.2;
-        ctx.translate(0, pitchOffset);
-        ctx.rotate(rollAngle);
+        // Listen for device orientation events
+        window.addEventListener('deviceorientation', this.handleOrientation.bind(this));
         
-        // Draw sky and ground
-        this.drawBackground();
-        // Draw runway with perspective (horizon moves based on pitch)
-        this.drawRunway(input);
-        // Draw environmental structures with parallax scaling
-        this.drawStructures();
-        // Restore transformation for fixed HUD elements (aircraft will be drawn on top)
-        ctx.restore();
-        
-        // Draw the aircraft (using a fixed cockpit view)
-        this.drawAircraft(input);
+        // Listen for touch events for throttle control
+        this.canvas.addEventListener('touchstart', this.handleTouchStart.bind(this), false);
+        this.canvas.addEventListener('touchmove', this.handleTouchMove.bind(this), false);
+        this.canvas.addEventListener('touchend', this.handleTouchEnd.bind(this), false);
       }
       
-      // Draw sky and ground
-      drawBackground() {
-        const ctx = this.ctx;
-        const w = this.canvas.width, h = this.canvas.height;
-        // Sky
-        let skyGradient = ctx.createLinearGradient(0, 0, 0, h);
-        skyGradient.addColorStop(0, "#87CEEB");
-        skyGradient.addColorStop(1, "#87CEEB");
-        ctx.fillStyle = skyGradient;
-        ctx.fillRect(0, 0, w, h);
-        // Ground
-        let groundGradient = ctx.createLinearGradient(0, h * 0.6, 0, h);
-        groundGradient.addColorStop(0, "#228B22");
-        groundGradient.addColorStop(1, "#006400");
-        ctx.fillStyle = groundGradient;
-        ctx.fillRect(0, h * 0.6, w, h * 0.4);
+      handleOrientation(event) {
+        let beta = event.beta || 0;   // pitch: front/back tilt
+        let gamma = event.gamma || 0; // roll: left/right tilt
+        
+        // Apply dead zone (±3°)
+        this.pitch = (Math.abs(beta) < 3) ? 0 : beta;
+        this.roll  = (Math.abs(gamma) < 3) ? 0 : gamma;
+        
+        // Normalize to a limited range (±30°)
+        this.pitch = Math.max(-30, Math.min(30, this.pitch));
+        this.roll  = Math.max(-30, Math.min(30, this.roll));
       }
       
-      // Draw a perspective runway that adjusts based on pitch input
-      drawRunway(input) {
+      handleTouchStart(e) {
+        // Check if touch begins within the throttle control area (a circle in the bottom-right)
+        let touch = e.touches[0];
+        let rect = this.canvas.getBoundingClientRect();
+        let x = touch.clientX - rect.left;
+        let y = touch.clientY - rect.top;
+        // Define throttle control circle parameters
+        let centerX = this.canvas.width - 70;
+        let centerY = this.canvas.height - 70;
+        let dx = x - centerX;
+        let dy = y - centerY;
+        let distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance < 50) {
+          this.throttleDragging = true;
+          this.throttleStartY = y;
+          this.throttleStartValue = this.throttle;
+          e.preventDefault();
+        }
+      }
+      
+      handleTouchMove(e) {
+        if (this.throttleDragging) {
+          let touch = e.touches[0];
+          let rect = this.canvas.getBoundingClientRect();
+          let y = touch.clientY - rect.top;
+          let dy = this.throttleStartY - y; // dragging up increases throttle
+          // Sensitivity factor: 0.5% per pixel
+          let change = dy * 0.5;
+          this.throttle = Math.max(0, Math.min(100, this.throttleStartValue + change));
+          e.preventDefault();
+        }
+      }
+      
+      handleTouchEnd(e) {
+        this.throttleDragging = false;
+      }
+      
+      update() {
+        // (Optional) Input smoothing or additional processing can be added here.
+      }
+      
+      reset() {
+        this.pitch = 0;
+        this.roll = 0;
+        this.throttle = 50;
+        this.throttleDragging = false;
+      }
+    }
+    
+    /* ========= PhysicsEngine ========= */
+    class PhysicsEngine {
+      constructor() {
+        this.reset();
+      }
+      
+      reset() {
+        // Initialize aircraft state
+        this.aircraft = {
+          altitude: 100,      // starting altitude
+          verticalSpeed: 0,   // vertical velocity (m/s)
+          forwardSpeed: 50,   // forward speed (m/s)
+          distance: 0,        // total distance traveled (for environment scroll)
+          pitch: 0,           // copy of current pitch for rendering
+          roll: 0             // copy of current roll for rendering
+        };
+      }
+      
+      update(dt, input) {
+        // Update aircraft orientation for rendering
+        this.aircraft.pitch = input.pitch;
+        this.aircraft.roll = input.roll;
+        
+        // Forward speed model: base speed plus throttle effect
+        let targetSpeed = 50 + input.throttle; 
+        let acceleration = (targetSpeed - this.aircraft.forwardSpeed) * 0.5;
+        this.aircraft.forwardSpeed += acceleration * dt;
+        this.aircraft.distance += this.aircraft.forwardSpeed * dt;
+        
+        // Vertical physics: pitch influences lift (climb) and gravity pulls down
+        let pitchFactor = input.pitch / 30; // normalized (-1 to 1)
+        let lift = pitchFactor * input.throttle * 0.1;  // arbitrary lift factor
+        let gravity = 9.81 * 0.2; // scaled gravity
+        let verticalAcc = lift - gravity;
+        this.aircraft.verticalSpeed += verticalAcc * dt;
+        // Apply slight damping to vertical speed (simulating drag)
+        this.aircraft.verticalSpeed *= 0.99;
+        this.aircraft.altitude += this.aircraft.verticalSpeed * dt;
+      }
+    }
+    
+    /* ========= Renderer ========= */
+    class Renderer {
+      constructor(canvas, ctx) {
+        this.canvas = canvas;
+        this.ctx = ctx;
+        // Set initial horizon position (half the canvas height)
+        this.horizonY = this.canvas.height * 0.5;
+      }
+      
+      onResize() {
+        this.horizonY = this.canvas.height * 0.5;
+      }
+      
+      render(aircraft, input) {
+        // Render background sky, horizon, ground grid, runway, environment, and aircraft.
+        this.drawSky();
+        this.drawHorizon();
+        this.drawGround(aircraft);
+        this.drawRunway(aircraft);
+        this.drawEnvironment(aircraft);
+        this.drawAircraft(aircraft);
+      }
+      
+      drawSky() {
+        let grd = this.ctx.createLinearGradient(0, 0, 0, this.canvas.height);
+        grd.addColorStop(0, "#87CEFA"); // light blue
+        grd.addColorStop(1, "#4682B4"); // steel blue
+        this.ctx.fillStyle = grd;
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+      }
+      
+      drawHorizon() {
+        this.ctx.strokeStyle = "#ffffff";
+        this.ctx.lineWidth = 2;
+        this.ctx.beginPath();
+        this.ctx.moveTo(0, this.horizonY);
+        this.ctx.lineTo(this.canvas.width, this.horizonY);
+        this.ctx.stroke();
+      }
+      
+      drawGround(aircraft) {
+        // Draw a simple grid to simulate ground movement
         const ctx = this.ctx;
-        const w = this.canvas.width, h = this.canvas.height;
-        ctx.save();
-        // Adjust horizon position with pitch: a higher nose-up (negative pitch) raises the horizon.
-        const horizonY = h * 0.6 + input.pitch * 2;
-        const centerX = w / 2;
-        // Define the trapezoid for the runway
-        const topWidth = w * 0.1;
-        const bottomWidth = w * 0.8;
-        ctx.beginPath();
-        ctx.moveTo(centerX - topWidth / 2, horizonY);
-        ctx.lineTo(centerX + topWidth / 2, horizonY);
-        ctx.lineTo(centerX + bottomWidth / 2, h);
-        ctx.lineTo(centerX - bottomWidth / 2, h);
-        ctx.closePath();
+        ctx.strokeStyle = "#555";
+        ctx.lineWidth = 1;
+        const numLines = 20;
+        for (let i = 1; i < numLines; i++) {
+          let t = i / numLines;
+          let y = this.horizonY + t * (this.canvas.height - this.horizonY);
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(this.canvas.width, y);
+          ctx.stroke();
+        }
+      }
+      
+      drawRunway(aircraft) {
+        const ctx = this.ctx;
+        // Draw runway as a trapezoid (narrow at the horizon, wide at the bottom)
+        const runwayWidthTop = 20;
+        const runwayWidthBottom = this.canvas.width * 0.8;
         ctx.fillStyle = "#333";
+        ctx.beginPath();
+        ctx.moveTo(this.canvas.width / 2 - runwayWidthTop / 2, this.horizonY);
+        ctx.lineTo(this.canvas.width / 2 + runwayWidthTop / 2, this.horizonY);
+        ctx.lineTo(this.canvas.width / 2 + runwayWidthBottom / 2, this.canvas.height);
+        ctx.lineTo(this.canvas.width / 2 - runwayWidthBottom / 2, this.canvas.height);
+        ctx.closePath();
         ctx.fill();
-        // Draw center markings for the runway
+        
+        // Draw a dashed center line along the runway
         ctx.strokeStyle = "#FFF";
         ctx.lineWidth = 2;
         ctx.setLineDash([20, 20]);
         ctx.beginPath();
-        ctx.moveTo(centerX, horizonY);
-        ctx.lineTo(centerX, h);
+        ctx.moveTo(this.canvas.width / 2, this.horizonY);
+        ctx.lineTo(this.canvas.width / 2, this.canvas.height);
         ctx.stroke();
-        ctx.restore();
+        ctx.setLineDash([]);
       }
       
-      // Draw environmental structures with a parallax effect
-      drawStructures() {
+      drawEnvironment(aircraft) {
+        // Draw a few simple environment objects (buildings/trees)
         const ctx = this.ctx;
-        const w = this.canvas.width, h = this.canvas.height;
-        this.structures.forEach((struct) => {
-          // Simulate movement: objects closer to the horizon (lower y) appear larger
-          let relativeY = struct.y - (this.physics.position.x * 0.05) % 300;
-          if (relativeY < 0) relativeY += 300;
-          let scale = 1 + (300 - relativeY) / 600;
-          // Adjust positions using the scale factor
-          let posX = struct.x * scale;
-          let posY = h * 0.6 + relativeY;
-          ctx.save();
-          ctx.translate(posX, posY);
-          ctx.scale(scale, scale);
-          ctx.fillStyle = struct.color;
-          switch(struct.type) {
-            case "rect":
-              ctx.fillRect(-struct.size/2, -struct.size/2, struct.size, struct.size);
-              break;
-            case "circle":
-              ctx.beginPath();
-              ctx.arc(0, 0, struct.size/2, 0, Math.PI * 2);
-              ctx.fill();
-              break;
-            case "triangle":
-              ctx.beginPath();
-              ctx.moveTo(0, -struct.size/2);
-              ctx.lineTo(-struct.size/2, struct.size/2);
-              ctx.lineTo(struct.size/2, struct.size/2);
-              ctx.closePath();
-              ctx.fill();
-              break;
-          }
-          ctx.restore();
-        });
+        ctx.fillStyle = "#8B4513"; // brown color
+        const numObjects = 5;
+        for (let i = 0; i < numObjects; i++) {
+          // Create a repeating pattern based on aircraft distance
+          let z = (aircraft.distance + i * 200) % 1000;
+          let scale = 1 - (z / 1000); // objects enlarge as they get closer
+          let objWidth = 30 * scale;
+          let objHeight = 60 * scale;
+          // Alternate positions on either side of the runway
+          let x = (i % 2 === 0) ? this.canvas.width * 0.2 : this.canvas.width * 0.8;
+          // Adjust vertical position based on scale
+          let y = this.horizonY + (1 - scale) * (this.canvas.height - this.horizonY);
+          ctx.fillRect(x - objWidth / 2, y - objHeight, objWidth, objHeight);
+        }
       }
       
-      // Draw the aircraft in a fixed cockpit view
-      drawAircraft(input) {
+      drawAircraft(aircraft) {
         const ctx = this.ctx;
-        const w = this.canvas.width, h = this.canvas.height;
+        // Aircraft is drawn at the center horizontally.
+        const x = this.canvas.width / 2;
+        // Map altitude to a vertical offset: higher altitude raises the aircraft on screen.
+        const maxAltitude = 200; // max altitude mapped
+        const altitude = Math.min(aircraft.altitude, maxAltitude);
+        const y = this.horizonY - (altitude / maxAltitude) * (this.horizonY * 0.8);
+        
         ctx.save();
-        // Position the aircraft in the lower center of the screen
-        ctx.translate(w / 2, h * 0.75);
-        // Apply the roll rotation to simulate banking
-        ctx.rotate(input.roll * Math.PI / 180);
-        // Optionally, you can adjust vertical position with pitch (e.g., a slight shift)
-        // ctx.translate(0, input.pitch * 0.5);
-        // Draw a simple triangle representing the aircraft
+        ctx.translate(x, y);
+        // Rotate based on the aircraft’s roll (in radians)
+        ctx.rotate(aircraft.roll * Math.PI / 180);
+        // Draw aircraft as a simple yellow triangle
+        ctx.fillStyle = "yellow";
         ctx.beginPath();
-        ctx.moveTo(0, -15);
-        ctx.lineTo(-10, 15);
-        ctx.lineTo(10, 15);
+        ctx.moveTo(0, -10);
+        ctx.lineTo(20, 10);
+        ctx.lineTo(-20, 10);
         ctx.closePath();
-        ctx.fillStyle = "#FF0";
         ctx.fill();
         ctx.restore();
       }
     }
-
-    /**********************************
-     * UIController Module
-     * - Updates the HUD display with real-time flight data.
-     **********************************/
+    
+    /* ========= UIController ========= */
     class UIController {
-      constructor(hudElement) {
-        this.hudElement = hudElement;
-      }
-      update(speed, altitude, throttle) {
-        this.hudElement.innerHTML = 
-          "Speed: " + speed.toFixed(1) + "<br>" +
-          "Altitude: " + altitude.toFixed(1) + "<br>" +
-          "Throttle: " + Math.round(throttle) + "%";
-      }
-    }
-
-    /**********************************
-     * GameEngine Module
-     * - Manages the main game loop, state transitions, and inter-module communication.
-     **********************************/
-    class GameEngine {
-      constructor() {
-        this.canvas = document.getElementById("gameCanvas");
-        this.inputHandler = new InputHandler(document.getElementById("throttleControl"));
-        this.physicsEngine = new PhysicsEngine();
-        this.renderer = new Renderer(this.canvas, this.physicsEngine);
-        this.uiController = new UIController(document.getElementById("hud"));
-        this.state = "active"; // active, game_over
-        this.lastTime = performance.now();
-        this.gameLoop = this.gameLoop.bind(this);
-        // Listen for a tap to restart after a game over
-        this.canvas.addEventListener("click", () => {
-          if(this.state === "game_over") this.restartGame();
-        });
+      constructor(canvas, ctx, inputHandler) {
+        this.canvas = canvas;
+        this.ctx = ctx;
+        this.inputHandler = inputHandler;
+        // Throttle control parameters
+        this.throttleRadius = 50;
+        this.throttleCenter = { x: this.canvas.width - 70, y: this.canvas.height - 70 };
       }
       
-      gameLoop(currentTime) {
-        let deltaTime = (currentTime - this.lastTime) / 16.67; // Normalize to ~60fps
-        this.lastTime = currentTime;
-        
-        if (this.state === "active") {
-          // Update physics based on user input
-          this.physicsEngine.update(deltaTime, this.inputHandler);
-          // If the aircraft touches the ground (altitude <= 0), trigger game over
-          if (this.physicsEngine.position.y <= 0) {
-            this.state = "game_over";
-          }
-        }
-        
-        // Render the scene using current input data
-        this.renderer.render(this.inputHandler);
-        // Update HUD (using absolute speed and altitude)
-        this.uiController.update(
-          Math.abs(this.physicsEngine.velocity.x),
-          this.physicsEngine.position.y,
-          this.inputHandler.throttle
-        );
-        
-        if (this.state === "active") {
-          requestAnimationFrame(this.gameLoop);
-        } else {
-          this.displayGameOver();
-        }
+      onResize() {
+        this.throttleCenter = { x: this.canvas.width - 70, y: this.canvas.height - 70 };
       }
       
-      // Display a game over overlay
-      displayGameOver() {
-        const ctx = this.renderer.ctx;
-        const w = this.canvas.width, h = this.canvas.height;
+      render(aircraft) {
+        this.drawThrottleControl();
+        this.drawHUD(aircraft);
+      }
+      
+      drawThrottleControl() {
+        const ctx = this.ctx;
+        const center = this.throttleCenter;
         ctx.save();
-        ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
-        ctx.fillRect(0, 0, w, h);
+        // Draw the outer circle for the throttle control
+        ctx.beginPath();
+        ctx.arc(center.x, center.y, this.throttleRadius, 0, Math.PI * 2);
+        ctx.strokeStyle = "#FFF";
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        // Fill a sector to indicate current throttle value
+        let angle = (this.inputHandler.throttle / 100) * Math.PI * 2 - Math.PI / 2;
+        ctx.beginPath();
+        ctx.moveTo(center.x, center.y);
+        ctx.arc(center.x, center.y, this.throttleRadius - 5, -Math.PI / 2, angle, false);
+        ctx.closePath();
+        ctx.fillStyle = "rgba(255,255,0,0.5)";
+        ctx.fill();
+        // Draw throttle percentage text
         ctx.fillStyle = "#FFF";
-        ctx.font = "48px sans-serif";
+        ctx.font = "16px sans-serif";
         ctx.textAlign = "center";
-        ctx.fillText("Game Over", w/2, h/2);
-        ctx.font = "24px sans-serif";
-        ctx.fillText("Tap to Restart", w/2, h/2 + 40);
+        ctx.textBaseline = "middle";
+        ctx.fillText(Math.round(this.inputHandler.throttle) + "%", center.x, center.y);
         ctx.restore();
       }
       
-      // Reset game state to restart the simulation
-      restartGame() {
-        this.physicsEngine = new PhysicsEngine();
-        this.renderer.physics = this.physicsEngine;
-        this.lastTime = performance.now();
-        this.state = "active";
-        requestAnimationFrame(this.gameLoop);
-      }
-      
-      start() {
-        this.lastTime = performance.now();
-        requestAnimationFrame(this.gameLoop);
+      drawHUD(aircraft) {
+        const ctx = this.ctx;
+        ctx.save();
+        ctx.fillStyle = "#FFF";
+        ctx.font = "18px sans-serif";
+        ctx.textAlign = "left";
+        ctx.textBaseline = "top";
+        // Display key parameters on-screen
+        let speed = Math.round(aircraft.forwardSpeed);
+        let altitude = Math.round(aircraft.altitude);
+        let pitch = Math.round(aircraft.pitch);
+        let roll = Math.round(aircraft.roll);
+        let throttle = Math.round(this.inputHandler.throttle);
+        const hudText = `Speed: ${speed}  Alt: ${altitude}  Pitch: ${pitch}°  Roll: ${roll}°  Throttle: ${throttle}%`;
+        ctx.fillText(hudText, 10, 10);
+        ctx.restore();
       }
     }
-
-    /**********************************
-     * Initialize and start the game
-     **********************************/
-    document.addEventListener("DOMContentLoaded", () => {
-      const game = new GameEngine();
-      game.start();
-    });
+    
+    // Create and start the game engine (global instance)
+    const gameEngine = new GameEngine();
+    gameEngine.start();
   </script>
 </body>
 </html>
