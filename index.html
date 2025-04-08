@@ -2,22 +2,23 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <!-- Ensure proper scaling on mobile -->
+  <!-- Ensures proper mobile scaling -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Simple Third-Person Plane View</title>
+  <title>Third-Person Plane View</title>
   <style>
     html, body {
       margin: 0;
-      height: 100%;
+      padding: 0;
       overflow: hidden;
-      background: #87CEEB; /* Sky blue */
+      height: 100%;
+      background: #87CEEB; /* Sky-blue background */
       font-family: sans-serif;
     }
     canvas {
       display: block;
     }
   </style>
-  <!-- Import map to load Three.js modules -->
+  <!-- Import map: loading Three.js modules -->
   <script type="importmap">
     {
       "imports": {
@@ -30,76 +31,84 @@
 </head>
 <body>
   <script type="module">
-    import * as THREE from 'three';
-    import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-    import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+    import * as THREE from "three";
+    import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+    import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
-    // Create the scene with a sky-blue background.
+    // Create the scene
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x87CEEB);
 
-    // Create the camera.
-    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 10000);
+    // Create the camera
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 10000);
 
-    // Create the renderer and add it to the page.
+    // Create the renderer and add the canvas to the document
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     document.body.appendChild(renderer.domElement);
 
-    // Add basic lighting.
+    // Add ambient and directional lighting
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
     scene.add(ambientLight);
     const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
     directionalLight.position.set(100, 100, 100);
     scene.add(directionalLight);
 
-    // Create a large grassy ground.
-    const groundGeometry = new THREE.PlaneGeometry(10000, 10000);
-    const groundMaterial = new THREE.MeshPhongMaterial({ color: 0x228B22 });
-    const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-    ground.rotation.x = -Math.PI / 2;
+    // Create a large grassy ground
+    const groundGeo = new THREE.PlaneGeometry(10000, 10000);
+    const groundMat = new THREE.MeshPhongMaterial({ color: 0x228B22 });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI/2;
     scene.add(ground);
 
-    // Setup OrbitControls for user interaction.
-    // Users can drag or scroll to look around with the plane centered.
+    // Setup OrbitControls so user can scroll around
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
 
-    // Variables for the plane and default camera settings.
+    // Variables for our plane and camera offsets
     let plane;
-    // Assume one plane length is ~10 units, so three lengths is 30 units.
-    const defaultTrailingDistance = 30;
-    // Vertical offset ensures a good view of the plane from below.
-    const cameraVerticalOffset = 10;
+    let trailingDistance = 30; // Default fallback value
 
-    // Load the 3D airplane model.
+    // Load the plane model
     const loader = new GLTFLoader();
     loader.load(
-      'models/plane.glb',
+      "models/plane.glb",
       (gltf) => {
         plane = gltf.scene;
-        // Place the plane on the ground with a small offset to avoid z-fighting.
+        // Place the plane on the ground with a slight y offset to avoid z-fighting
         plane.position.set(0, 0.05, 0);
-        // The model is assumed to be oriented correctly (nose facing -Z).
+        // The model should already be oriented correctly (nose facing -Z)
         scene.add(plane);
 
-        // Set the camera: three plane lengths behind the plane.
-        // Since the plane's nose faces -Z, "behind" is in the +Z direction.
-        camera.position.set(0, cameraVerticalOffset, defaultTrailingDistance);
-        // Ensure OrbitControls target the plane.
+        // Compute the bounding box of the plane model.
+        const box = new THREE.Box3().setFromObject(plane);
+        const size = new THREE.Vector3();
+        box.getSize(size);
+        // Use the depth (size.z) to determine how far behind to place the camera.
+        trailingDistance = size.z * 3;
+
+        // Optional: You can add a helper to visualize the bounding box (for debugging)
+        // const helper = new THREE.Box3Helper(box, 0xff0000);
+        // scene.add(helper);
+
+        // Set the camera behind the plane.
+        // Since the plane's nose faces -Z, "behind" is in the positive Z direction.
+        const verticalOffset = size.y * 1.5; // You can adjust this factor as needed.
+        camera.position.set(0, verticalOffset, trailingDistance);
+        // Ensure the OrbitControls target is centered on the plane.
         controls.target.copy(plane.position);
         controls.update();
       },
       undefined,
       (error) => {
-        console.error('Error loading plane model:', error);
+        console.error("Error loading plane model:", error);
       }
     );
 
-    // Adjust the scene on window resize.
-    window.addEventListener('resize', () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
+    // Adjust on window resize.
+    window.addEventListener("resize", () => {
+      camera.aspect = window.innerWidth/window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
     });
