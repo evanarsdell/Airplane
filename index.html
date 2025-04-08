@@ -50,20 +50,19 @@
       border-radius: 8px;
       z-index: 20;
     }
-    /* Rotate the throttle input so it runs vertically */
+    /* Rotate the throttle slider so it runs vertically */
     #throttleContainer input[type="range"] {
       -webkit-appearance: none;
       width: 150px;
       transform: rotate(270deg);
-      /* Optional styling for the slider track and thumb */
     }
-    /* Virtual joystick container now centered horizontally */
+    /* Virtual joystick container (bigger and centered horizontally) */
     #joystick-container {
       position: fixed;
       bottom: 20px;
-      left: calc(50% - 50px);  /* container is 100px wide */
-      width: 100px;
-      height: 100px;
+      left: calc(50% - 75px);  /* container is 150px wide */
+      width: 150px;
+      height: 150px;
       background: rgba(0,0,0,0.2);
       border: 2px solid rgba(0,0,0,0.5);
       border-radius: 50%;
@@ -74,8 +73,8 @@
       justify-content: center;
     }
     #joystick {
-      width: 50px;
-      height: 50px;
+      width: 70px;
+      height: 70px;
       background: rgba(0,0,0,0.5);
       border-radius: 50%;
       position: relative;
@@ -129,12 +128,12 @@
     <div id="altimeter">Altitude: 0 m</div>
     <div id="speedometer">Speed: 0 km/h</div>
   </div>
-  <!-- Throttle UI (vertical slider) -->
+  <!-- Throttle UI (vertical slider on the right) -->
   <div id="throttleContainer">
     <label for="throttle">Throttle</label>
     <input type="range" id="throttle" min="0" max="5" step="0.1" value="0">
   </div>
-  <!-- Virtual Joystick (centered horizontally) -->
+  <!-- Virtual Joystick (centered and enlarged) -->
   <div id="joystick-container">
     <div id="joystick"></div>
   </div>
@@ -143,12 +142,12 @@
     import * as THREE from "three";
     import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
-    // Prevent copy/cut/paste events
+    // Prevent copy/cut/paste events.
     document.addEventListener('copy', e => e.preventDefault());
     document.addEventListener('cut', e => e.preventDefault());
     document.addEventListener('paste', e => e.preventDefault());
 
-    // Global variables
+    // Global variables.
     let scene, camera, renderer, plane, clock;
     let throttleSlider, joystickContainer, joystickElem;
     const hudAltimeter = document.getElementById("altimeter");
@@ -157,24 +156,25 @@
     let cameraYawOffset = 0, isDraggingCamera = false, dragStartX = 0;
     let prevPlanePosition = new THREE.Vector3();
 
-    // Array for obstacles (runways, buildings, etc.)
+    // Array for obstacles (runways, buildings, etc.).
     const obstacles = [];
 
-    // Target sizes for the plane (in meters)
-    const targetPlaneLength = 8;   // desired length ~8 m
-    const targetPlaneHeight = 3;   // desired height ~3 m
-    // Camera trailing parameters:
+    // Target sizes for the plane (in meters).
+    const targetPlaneLength = 8;   // desired length ~8 m.
+    const targetPlaneHeight = 3;   // desired height ~3 m.
+    // Camera trailing parameters.
     let trailingDistance = targetPlaneLength * 3;  // ~24 m behind.
     let verticalOffset = targetPlaneHeight * 1.5;    // ~4.5 m above.
 
-    // Physics factors (reverted to original values):
-    const speedFactor = 30;      // original throttle sensitivity.
-    const gravity = 9.8;         // original gravity.
+    // Physics factors (reverted to original crisp handling, but with a slightly tighter roll response).
+    const speedFactor = 30;      // throttle sensitivity.
+    const gravity = 9.8;         // gravity.
     const pitchFactor = 0.8;
-    const maxBankAngle = THREE.MathUtils.degToRad(30);
     const yawFactor = 0.5;
+    const maxBankAngle = THREE.MathUtils.degToRad(30);
+    const rollLerpFactor = 0.2;  // increased from 0.1 for tighter roll snap-back.
 
-    // Fog settings (linear fog with distant visibility)
+    // Fog settings (linear fog for distant visibility).
     const fogColor = 0x87CEEB;
     const fogNear = 2000;
     const fogFar = 3000;
@@ -242,7 +242,7 @@
           plane = gltf.scene;
           // Always spawn the plane on the main runway at a fixed position.
           plane.position.set(0, 1.2, -10);
-          plane.rotation.set(0, 0, 0); // Assume the nose faces -Z.
+          plane.rotation.set(0, 0, 0); // Assume nose faces -Z.
           scene.add(plane);
 
           // Adjust plane scale based on target size.
@@ -367,7 +367,7 @@
         do {
           x = THREE.MathUtils.randFloatSpread(4000);
           z = THREE.MathUtils.randFloat(-4000, 4000);
-        } while (isOnRunway(x, z)); 
+        } while (isOnRunway(x, z));
         createTree(x, z);
       }
       // Spawn extra generic buildings.
@@ -386,7 +386,6 @@
 
     // Helper to decide if a coordinate falls on the main runway.
     function isOnRunway(x, z) {
-      // Assume the main runway spans x between -15 and 15, and z between 10 and -210.
       if (x > -15 && x < 15 && z < 10 && z > -210) return true;
       return false;
     }
@@ -487,17 +486,17 @@
       obstacles.push(streetMesh);
     }
 
-    // Spawn regular clouds (for lower altitudes).
+    // Spawn regular clouds (for lower altitudes). Increase number for realism.
     function spawnClouds() {
-      for (let i = 0; i < 50; i++) {
+      for (let i = 0; i < 80; i++) {
         const cloud = createCloud(THREE.MathUtils.randFloat(300, 1000));
         scene.add(cloud);
       }
     }
 
-    // Spawn high clouds for cloud cover (for altitudes around 6000 m).
+    // Spawn high clouds (for altitudes around 6000 m).
     function spawnHighClouds() {
-      for (let i = 0; i < 50; i++) {
+      for (let i = 0; i < 80; i++) {
         const cloud = createCloud(THREE.MathUtils.randFloat(6000, 6100));
         scene.add(cloud);
       }
@@ -587,7 +586,7 @@
       joystickElem.style.transform = `translate(${moveX}px, ${moveY}px)`;
     }
 
-    // --- Update camera to follow plane ---
+    // --- Update camera to follow the plane ---
     function updateCamera(delta) {
       if (!plane) return;
       let planeDir = new THREE.Vector3();
@@ -607,7 +606,7 @@
       camera.lookAt(lookAtPoint);
     }
 
-    // Simple collision detection: if the plane intersects an obstacle, revert position and set throttle to 0.
+    // Simple collision detection: if the plane intersects an obstacle, revert its position and set throttle to 0.
     function checkCollisions() {
       if (!plane) return;
       const planeBox = new THREE.Box3().setFromObject(plane);
@@ -626,12 +625,12 @@
       const delta = clock.getDelta();
 
       if (plane) {
-        // --- Joystick steering (reverting to original handling) ---
+        // --- Joystick steering (original handling with slightly faster roll snap-back) ---
         const currentEuler = new THREE.Euler().setFromQuaternion(plane.quaternion, "YXZ");
         currentEuler.x += joystick.y * pitchFactor * delta;
         currentEuler.y -= joystick.x * yawFactor * delta;
         const targetRoll = -joystick.x * maxBankAngle;
-        currentEuler.z = THREE.MathUtils.lerp(currentEuler.z, targetRoll, 0.1);
+        currentEuler.z = THREE.MathUtils.lerp(currentEuler.z, targetRoll, rollLerpFactor);
         plane.quaternion.setFromEuler(currentEuler);
 
         // --- Physics integration (original simple motion) ---
@@ -647,20 +646,24 @@
         }
 
         // Update HUD.
-        // In this simpler physics model, the horizontal speed is inferred from throttle.
         const speedKmh = throttleValue * speedFactor * 3.6;
         hudAltimeter.innerHTML = `Altitude: ${plane.position.y.toFixed(1)} m`;
         hudSpeedometer.innerHTML = `Speed: ${speedKmh.toFixed(1)} km/h`;
 
         // Check collisions.
         checkCollisions();
+
+        // If the plane climbs above 6000 m, spawn high clouds (if not already).
+        if (plane.position.y > 6000) {
+          spawnHighClouds();
+        }
       }
 
       updateCamera(delta);
       renderer.render(scene, camera);
     }
 
-    // --- Start Game: Remove overlay and initialize the game.
+    // --- Start Game: Remove the overlay and initialize the game.
     function startGame() {
       const startScreen = document.getElementById("startScreen");
       startScreen.style.display = "none";
