@@ -82,12 +82,12 @@
     const joystick = { x: 0, y: 0 };
     let cameraYawOffset = 0, isDraggingCamera = false, dragStartX = 0;
     
-    // Target sizes (plane in meters)
-    const targetPlaneLength = 8;
-    const targetPlaneHeight = 3;
-    // Camera trailing parameters
-    let trailingDistance = targetPlaneLength * 3;  // ~24 m trailing distance
-    let verticalOffset = targetPlaneHeight * 1.5;    // ~4.5 m above the plane
+    // Target sizes for the plane (in meters)
+    const targetPlaneLength = 8;  // desired length ~8 m
+    const targetPlaneHeight = 3;  // desired height ~3 m
+    // Camera trailing parameters based on target sizes:
+    let trailingDistance = targetPlaneLength * 3;  // ~24 m behind.
+    let verticalOffset = targetPlaneHeight * 1.5;    // ~4.5 m above.
     
     const speedFactor = 30;
     const gravity = 9.8;
@@ -99,41 +99,41 @@
     animate();
     
     function init() {
+      // Create scene.
       scene = new THREE.Scene();
       scene.background = new THREE.Color(0x87CEEB);
       
-      camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 10000);
+      // Set up camera.
+      camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 10000);
       
+      // Renderer.
       renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setSize(window.innerWidth, window.innerHeight);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       document.body.appendChild(renderer.domElement);
       
+      // Lighting.
       const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
       scene.add(ambientLight);
       const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
       directionalLight.position.set(100, 100, 100);
       scene.add(directionalLight);
       
-      // Create impermeable grass ground
+      // Create impermeable grass ground at y = 0.
       const groundGeo = new THREE.PlaneGeometry(10000, 10000);
       const groundMat = new THREE.MeshPhongMaterial({ color: 0x228B22 });
       const ground = new THREE.Mesh(groundGeo, groundMat);
-      ground.rotation.x = -Math.PI / 2;
+      ground.rotation.x = -Math.PI/2;
       ground.position.y = 0;
-      // Ensure ground renders first.
-      ground.renderOrder = 0;
       scene.add(ground);
       
-      // ----- RUNWAY CREATION: Updated Block -----
-      // Define runway dimensions in proportion to target plane size.
-      const runwayWidth = targetPlaneLength * 2.5;  // ~20 m
-      const runwayLength = targetPlaneLength * 25;    // ~200 m
+      // Create an elevated runway.
+      // The runway is defined in proportion to the target plane.
+      const runwayWidth = targetPlaneLength * 2.5;  // ~20 m wide.
+      const runwayLength = targetPlaneLength * 25;    // ~200 m long.
       const runwayGeo = new THREE.PlaneGeometry(runwayWidth, runwayLength);
-      // Shift geometry so that runway extends from z = 0 to -runwayLength.
-      runwayGeo.translate(0, 0, -runwayLength / 2);
-      
-      // Create a canvas texture for the runway:
+      runwayGeo.translate(0, 0, -runwayLength/2);
+      // Create a canvas texture for the runway: black with a centered yellow dotted line.
       const runwayCanvas = document.createElement('canvas');
       runwayCanvas.width = 64;
       runwayCanvas.height = 256;
@@ -148,43 +148,36 @@
       runwayTexture.wrapS = THREE.RepeatWrapping;
       runwayTexture.wrapT = THREE.RepeatWrapping;
       runwayTexture.repeat.set(1, runwayLength/64);
-      
       const runwayMat = new THREE.MeshPhongMaterial({ map: runwayTexture });
-      // Enable polygon offset to avoid z-fighting with the ground.
-      runwayMat.polygonOffset = true;
-      runwayMat.polygonOffsetFactor = 1;
-      runwayMat.polygonOffsetUnits = 1;
-      
       const runwayMesh = new THREE.Mesh(runwayGeo, runwayMat);
       runwayMesh.rotation.x = -Math.PI/2;
-      // Elevate the runway so it's unmistakably visible above the grass.
+      // Elevate the runway so it is clearly visible.
       runwayMesh.position.set(0, 1.2, 0);
-      // Force runway to render after the ground.
-      runwayMesh.renderOrder = 1;
       scene.add(runwayMesh);
-      // ----- End of RUNWAY Block -----
       
-      // Spawn additional structures.
-      spawnVillages(3);
-      spawnCity();
-      spawnTrees(100);
+      // Spawn additional structures:
+      spawnVillages(3);  // three clusters of houses (villages)
+      spawnCity();       // a cluster of skyscrapers (city)
+      spawnTrees(100);   // random trees
       
+      // Get UI elements.
       throttleSlider = document.getElementById("throttle");
-      throttleSlider.value = 0;
+      throttleSlider.value = 0; // start with throttle off
       joystickContainer = document.getElementById("joystick-container");
       joystickElem = document.getElementById("joystick");
       
-      // Load rescaled plane model.
+      // Load the rescaled plane model.
       const loader = new GLTFLoader();
       loader.load(
         "models/plane.glb",
         (gltf) => {
           plane = gltf.scene;
-          // Place plane on the runway.
+          // Position the plane on the runway (ensure it sits on the elevated runway).
           plane.position.set(0, 1.25, 0);
-          plane.rotation.set(0, 0, 0); // Assumes nose faces -Z.
+          plane.rotation.set(0, 0, 0); // Assume nose faces -Z.
           scene.add(plane);
           
+          // Compute the plane's bounding box and adjust scale if necessary.
           const box = new THREE.Box3().setFromObject(plane);
           const size = new THREE.Vector3();
           box.getSize(size);
@@ -192,6 +185,7 @@
           const scaleFactor = targetPlaneLength / currentLength;
           plane.scale.multiplyScalar(scaleFactor);
           
+          // Recompute after scaling.
           const newBox = new THREE.Box3().setFromObject(plane);
           const newSize = new THREE.Vector3();
           newBox.getSize(newSize);
@@ -209,19 +203,20 @@
       clock = new THREE.Clock();
       window.addEventListener("resize", onWindowResize);
       
-      // Camera drag events.
+      // Set up camera drag events.
       renderer.domElement.addEventListener("pointerdown", onCameraDragStart);
       renderer.domElement.addEventListener("pointermove", onCameraDragMove);
       renderer.domElement.addEventListener("pointerup", onCameraDragEnd);
       renderer.domElement.addEventListener("pointercancel", onCameraDragEnd);
       
-      // Joystick events.
+      // Set up joystick events.
       joystickContainer.addEventListener("pointerdown", onJoystickStart);
       joystickContainer.addEventListener("pointermove", onJoystickMove);
       joystickContainer.addEventListener("pointerup", onJoystickEnd);
       joystickContainer.addEventListener("pointercancel", onJoystickEnd);
     }
     
+    // Spawns clusters ("villages") of houses.
     function spawnVillages(numPatches) {
       for (let i = 0; i < numPatches; i++) {
         let centerX = THREE.MathUtils.randFloatSpread(300);
@@ -236,6 +231,7 @@
       }
     }
     
+    // Spawns a city of skyscrapers in the distance.
     function spawnCity() {
       let cityCenterX = THREE.MathUtils.randFloat(-50, 50);
       let cityCenterZ = -800;
@@ -247,6 +243,7 @@
       }
     }
     
+    // Spawns random trees.
     function spawnTrees(num) {
       for (let i = 0; i < num; i++) {
         let x, z;
@@ -258,6 +255,7 @@
       }
     }
     
+    // Create a simple house (box body with cone roof).
     function createHouse(x, z, scaleFactor = 1) {
       const houseGroup = new THREE.Group();
       const bodyGeo = new THREE.BoxGeometry(10, 8, 10);
@@ -276,6 +274,7 @@
       scene.add(houseGroup);
     }
     
+    // Create a skyscraper as a tall box.
     function createSkyscraper(x, z) {
       const height = THREE.MathUtils.randFloat(30, 60);
       const geo = new THREE.BoxGeometry(20, height, 20);
@@ -286,6 +285,7 @@
       scene.add(building);
     }
     
+    // Create a tree with a cylindrical trunk and spherical crown.
     function createTree(x, z) {
       const treeGroup = new THREE.Group();
       const trunkGeo = new THREE.CylinderGeometry(0.3, 0.3, 2, 8);
@@ -303,11 +303,12 @@
     }
     
     function onWindowResize() {
-      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.aspect = window.innerWidth/window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
     }
     
+    // --- Camera drag events ---
     function onCameraDragStart(event) {
       if (event.target.closest("#joystick-container") || event.target.closest("#throttleContainer")) return;
       isDraggingCamera = true;
@@ -323,6 +324,7 @@
       isDraggingCamera = false;
     }
     
+    // --- Joystick pointer events ---
     let joystickActive = false;
     let joystickCenter = { x: 0, y: 0 };
     function onJoystickStart(event) {
@@ -361,17 +363,16 @@
       joystickElem.style.transform = `translate(${moveX}px, ${moveY}px)`;
     }
     
-    // --- Updated updateCamera using full world direction for trailing ---
+    // --- Updated updateCamera: compute trailing vector using world direction ---
     function updateCamera(delta) {
       if (!plane) return;
-      // Get the plane's true world forward direction.
       let planeDir = new THREE.Vector3();
       plane.getWorldDirection(planeDir);
-      // Zero out the vertical component.
+      // Zero out vertical component for horizontal direction.
       planeDir.y = 0;
       planeDir.normalize();
-      // The tail vector is the opposite horizontal direction.
-      const tailVector = planeDir.clone().negate().multiplyScalar(trailingDistance);
+      // Instead of negating, use planeDir directly. This assumes getWorldDirection returns the correct facing.
+      const tailVector = planeDir.clone().multiplyScalar(trailingDistance);
       if (cameraYawOffset !== 0) {
         tailVector.applyAxisAngle(new THREE.Vector3(0,1,0), cameraYawOffset);
       }
