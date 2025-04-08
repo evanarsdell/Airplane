@@ -20,7 +20,7 @@
       user-select: none;
     }
     canvas { display: block; }
-    /* HUD (altimeter & speedometer) in the top left */
+    /* HUD displayed at the top left */
     #hud {
       position: fixed;
       top: 20px;
@@ -32,12 +32,12 @@
       z-index: 30;
       font-size: 14px;
     }
-    /* Throttle slider container in the bottom right */
+    /* Throttle slider container (moved up and to the right, no background) */
     #throttleContainer {
       position: fixed;
-      bottom: 20px;
-      right: 20px;
-      background: rgba(255,255,255,0.8);
+      bottom: 40px;
+      right: 40px;
+      background: transparent;
       padding: 10px;
       border-radius: 8px;
       z-index: 20;
@@ -51,7 +51,7 @@
     }
     #throttleContainer input[type="range"]::-webkit-slider-runnable-track {
       width: 100%;
-      height: 20px; /* Thicker track */
+      height: 20px;
       background: #fff;
       border: 1px solid #999;
       border-radius: 10px;
@@ -60,12 +60,12 @@
       -webkit-appearance: none;
       width: 25px;
       height: 25px;
-      background: red;  /* Red dot */
+      background: red;
       border: none;
       border-radius: 50%;
       margin-top: -3px;
     }
-    /* Virtual joystick container – enlarged and centered horizontally */
+    /* Virtual joystick container – enlarged and centered horizontally at the bottom */
     #joystick-container {
       position: fixed;
       bottom: 20px;
@@ -89,13 +89,11 @@
       position: relative;
       touch-action: none;
     }
-    /* Start Screen Overlay – fully centered */
+    /* Start Screen Overlay – center all content */
     #startScreen {
       position: fixed;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
+      top: 0; left: 0;
+      width: 100vw; height: 100vh;
       background: rgba(0,0,0,0.85);
       color: #fff;
       z-index: 100;
@@ -115,10 +113,28 @@
       font-size: 18px;
       cursor: pointer;
     }
-    /* Instructions inside start screen */
-    #startScreen .instructions {
+    /* Objective popup (shown for 5 seconds after start) */
+    #objectivePopup {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 40;
+      background: rgba(0,0,0,0.7);
+      color: #fff;
+      padding: 10px;
+      border-radius: 5px;
       font-size: 16px;
-      line-height: 1.4;
+    }
+    /* Landing success message – big exclamation */
+    #landingMessage {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 50;
+      font-size: 48px;
+      color: yellow;
+      display: none;
     }
   </style>
   <!-- Import map for Three.js modules -->
@@ -136,30 +152,39 @@
   <div id="startScreen">
     <h1>Flight Simulator</h1>
     <p class="instructions">
-      Use the red dot on the vertical slider (bottom right) to increase engine speed.<br>
-      Use the big joystick (centered at the bottom) to steer the plane.
+      The goal: take off and then land on another runway!
+    </p>
+    <p class="instructions">
+      Use the red slider (bottom right) to increase engine speed<br>
+      and the big joystick (center bottom) to steer.
     </p>
     <button id="startButton">Start Game</button>
+  </div>
+  <!-- Objective Popup (initially visible, then removed after 5 seconds) -->
+  <div id="objectivePopup" style="display: none;">
+    Objective: Land on another runway!
   </div>
   <!-- HUD for altitude and speed -->
   <div id="hud">
     <div id="altimeter">Altitude: 0 m</div>
     <div id="speedometer">Speed: 0 km/h</div>
   </div>
-  <!-- Throttle UI (vertical slider on the right, no label text) -->
+  <!-- Throttle UI (vertical slider, no extra background) -->
   <div id="throttleContainer">
     <input type="range" id="throttle" min="0" max="5" step="0.1" value="0">
   </div>
-  <!-- Virtual Joystick (centered at bottom) -->
+  <!-- Virtual Joystick (enlarged and centered) -->
   <div id="joystick-container">
     <div id="joystick"></div>
   </div>
-  
+  <!-- Landing success pop-up -->
+  <div id="landingMessage">Great Job!</div>
+
   <script type="module">
     import * as THREE from "three";
     import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
     
-    // Prevent copy, cut, and paste.
+    // Prevent copy/cut/paste events.
     document.addEventListener('copy', e => e.preventDefault());
     document.addEventListener('cut', e => e.preventDefault());
     document.addEventListener('paste', e => e.preventDefault());
@@ -172,14 +197,15 @@
     const joystick = { x: 0, y: 0 };
     let cameraYawOffset = 0, isDraggingCamera = false, dragStartX = 0;
     let prevPlanePosition = new THREE.Vector3();
+    let homeRunway;  // Reference to the home runway.
+    let landingSuccessShown = false;
     
-    // Array for obstacles (runways, buildings, etc.).
+    // Array for obstacles.
     const obstacles = [];
     
     // Target sizes for the plane.
     const targetPlaneLength = 8;
     const targetPlaneHeight = 3;
-    // Camera trailing parameters.
     let trailingDistance = targetPlaneLength * 3;
     let verticalOffset = targetPlaneHeight * 1.5;
     
@@ -196,20 +222,20 @@
     const fogNear = 2000;
     const fogFar = 3000;
     
-    // Function to initialize the scene and objects.
+    // Initialize the scene and objects.
     function init() {
       scene = new THREE.Scene();
       scene.background = new THREE.Color(0x87CEEB);
       scene.fog = new THREE.Fog(fogColor, fogNear, fogFar);
       
-      camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 10000);
+      camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 10000);
       
       renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setSize(window.innerWidth, window.innerHeight);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       document.body.appendChild(renderer.domElement);
       
-      // SUNNY Lighting.
+      // SUNNY, warm lighting.
       const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
       scene.add(ambientLight);
       const directionalLight = new THREE.DirectionalLight(0xfff5e1, 1.0);
@@ -224,11 +250,10 @@
       ground.position.y = 0;
       scene.add(ground);
       
-      // Create Home Runway – spawn it at the plane’s spawn position.
-      // Plane is set to spawn at (0, 1.2, -10).
-      createRunway(new THREE.Vector3(0, 1.2, -10));
+      // Create Home Runway – spawn it directly under the plane.
+      homeRunway = createRunway(new THREE.Vector3(0, 1.2, -10), true);
       
-      // Additional runways.
+      // Create additional runways.
       createRunway(new THREE.Vector3(200, 1.2, -600));
       createRunway(new THREE.Vector3(-200, 1.2, -600));
       
@@ -243,12 +268,17 @@
       // Regular clouds.
       spawnClouds();
       
+      // Show objective popup for 5 seconds.
+      const objectivePopup = document.getElementById("objectivePopup");
+      objectivePopup.style.display = "block";
+      setTimeout(() => { objectivePopup.style.display = "none"; }, 5000);
+      
       throttleSlider = document.getElementById("throttle");
       throttleSlider.value = 0;
       joystickContainer = document.getElementById("joystick-container");
       joystickElem = document.getElementById("joystick");
       
-      // Load the plane model.
+      // Load plane model.
       const loader = new GLTFLoader();
       loader.load(
         "models/plane.glb",
@@ -258,17 +288,20 @@
           plane.position.set(0, 1.2, -10);
           plane.rotation.set(0, 0, 0);
           scene.add(plane);
+          
           const box = new THREE.Box3().setFromObject(plane);
           const size = new THREE.Vector3();
           box.getSize(size);
           const currentLength = size.z;
           const scaleFactor = targetPlaneLength / currentLength;
           plane.scale.multiplyScalar(scaleFactor);
+          
           const newBox = new THREE.Box3().setFromObject(plane);
           const newSize = new THREE.Vector3();
           newBox.getSize(newSize);
           trailingDistance = newSize.z * 3;
           verticalOffset = newSize.y * 1.5;
+          
           updateCamera(0);
         },
         undefined,
@@ -289,12 +322,14 @@
       joystickContainer.addEventListener("pointercancel", onJoystickEnd);
     }
     
-    // Creates a runway with a stable texture.
-    function createRunway(position) {
+    // Creates a runway. For home runway, no geometry translation is applied.
+    function createRunway(position, isHome = false) {
       const runwayWidth = targetPlaneLength * 2.5;
       const runwayLength = targetPlaneLength * 25;
       const runwayGeo = new THREE.PlaneGeometry(runwayWidth, runwayLength);
-      runwayGeo.translate(0, 0, -runwayLength / 2);
+      if (!isHome) {
+        runwayGeo.translate(0, 0, -runwayLength/2);
+      }
       const runwayCanvas = document.createElement("canvas");
       runwayCanvas.width = 64;
       runwayCanvas.height = 256;
@@ -303,19 +338,23 @@
       ctx.fillRect(0, 0, runwayCanvas.width, runwayCanvas.height);
       ctx.fillStyle = "#FFFF00";
       for (let y = 0; y < runwayCanvas.height; y += 20) {
-        ctx.fillRect(runwayCanvas.width / 2 - 2, y, 4, 5);
+        ctx.fillRect(runwayCanvas.width/2 - 2, y, 4, 5);
       }
       const runwayTexture = new THREE.CanvasTexture(runwayCanvas);
       runwayTexture.minFilter = THREE.LinearFilter;
       runwayTexture.wrapS = THREE.RepeatWrapping;
       runwayTexture.wrapT = THREE.RepeatWrapping;
-      runwayTexture.repeat.set(1, runwayLength / 64);
+      runwayTexture.repeat.set(1, runwayLength/64);
       const runwayMat = new THREE.MeshPhongMaterial({ map: runwayTexture });
       const runwayMesh = new THREE.Mesh(runwayGeo, runwayMat);
-      runwayMesh.rotation.x = -Math.PI / 2;
+      runwayMesh.rotation.x = -Math.PI/2;
       runwayMesh.position.copy(position);
       scene.add(runwayMesh);
       runwayMesh.userData.boundingBox = new THREE.Box3().setFromObject(runwayMesh);
+      runwayMesh.userData.isRunway = true;
+      if (isHome) {
+        runwayMesh.userData.isHome = true;
+      }
       obstacles.push(runwayMesh);
       return runwayMesh;
     }
@@ -353,7 +392,7 @@
       for (let i = 0; i < 5; i++) {
         let x = THREE.MathUtils.randFloat(-150, 150);
         let z = THREE.MathUtils.randFloat(-1000, -600);
-        createStreet(x, z, 200, 10, Math.random() > 0.5 ? 0 : Math.PI / 2);
+        createStreet(x, z, 200, 10, Math.random() > 0.5 ? 0 : Math.PI/2);
       }
     }
     
@@ -374,7 +413,7 @@
       for (let i = 0; i < 20; i++) {
         let x = THREE.MathUtils.randFloatSpread(4000);
         let z = THREE.MathUtils.randFloat(-4000, 4000);
-        createStreet(x, z, 150, 8, Math.random() > 0.5 ? 0 : Math.PI / 2);
+        createStreet(x, z, 150, 8, Math.random() > 0.5 ? 0 : Math.PI/2);
       }
     }
     
@@ -394,7 +433,7 @@
       const roofMat = new THREE.MeshPhongMaterial({ color: 0x808080 });
       const roofMesh = new THREE.Mesh(roofGeo, roofMat);
       roofMesh.position.y = 10;
-      roofMesh.rotation.y = Math.PI / 4;
+      roofMesh.rotation.y = Math.PI/4;
       houseGroup.add(roofMesh);
       houseGroup.position.set(x, 0, z);
       houseGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
@@ -408,7 +447,7 @@
       const geo = new THREE.BoxGeometry(20, height, 20);
       const mat = new THREE.MeshPhongMaterial({ color: detailed ? 0x666666 : 0x999999 });
       const building = new THREE.Mesh(geo, mat);
-      building.position.y = height / 2;
+      building.position.y = height/2;
       building.position.set(x, 0, z);
       scene.add(building);
       building.userData.boundingBox = new THREE.Box3().setFromObject(building);
@@ -420,9 +459,9 @@
       const depth = THREE.MathUtils.randFloat(10, 30);
       const height = THREE.MathUtils.randFloat(20, 80);
       const geo = new THREE.BoxGeometry(width, height, depth);
-      const mat = new THREE.MeshPhongMaterial({ color: Math.random() * 0xffffff });
+      const mat = new THREE.MeshPhongMaterial({ color: Math.random()*0xffffff });
       const building = new THREE.Mesh(geo, mat);
-      building.position.y = height / 2;
+      building.position.y = height/2;
       building.position.set(x, 0, z);
       scene.add(building);
       building.userData.boundingBox = new THREE.Box3().setFromObject(building);
@@ -431,20 +470,20 @@
     
     function createTree(x, z) {
       const treeGroup = new THREE.Group();
-      const trunkHeight = THREE.MathUtils.randFloat(1.5, 3);
-      const trunkRadius = THREE.MathUtils.randFloat(0.2, 0.5);
+      const trunkHeight = THREE.MathUtils.randFloat(1.5,3);
+      const trunkRadius = THREE.MathUtils.randFloat(0.2,0.5);
       const trunkGeo = new THREE.CylinderGeometry(trunkRadius, trunkRadius, trunkHeight, 8);
       const trunkMat = new THREE.MeshPhongMaterial({ color: 0x8B4513 });
       const trunk = new THREE.Mesh(trunkGeo, trunkMat);
-      trunk.position.y = trunkHeight / 2;
+      trunk.position.y = trunkHeight/2;
       treeGroup.add(trunk);
-      const crownRadius = THREE.MathUtils.randFloat(1, 2);
+      const crownRadius = THREE.MathUtils.randFloat(1,2);
       const crownGeo = new THREE.SphereGeometry(crownRadius, 8, 8);
       const crownMat = new THREE.MeshPhongMaterial({ color: 0x2E8B57 });
       const crown = new THREE.Mesh(crownGeo, crownMat);
-      crown.position.y = trunkHeight + crownRadius * 0.8;
+      crown.position.y = trunkHeight + crownRadius*0.8;
       treeGroup.add(crown);
-      treeGroup.position.set(x, 0, z);
+      treeGroup.position.set(x,0,z);
       scene.add(treeGroup);
     }
     
@@ -455,20 +494,20 @@
       streetCanvas.height = 256;
       const ctx = streetCanvas.getContext("2d");
       ctx.fillStyle = "#000000";
-      ctx.fillRect(0, 0, streetCanvas.width, streetCanvas.height);
+      ctx.fillRect(0,0,streetCanvas.width, streetCanvas.height);
       ctx.fillStyle = "#FFFFFF";
       for (let y = 0; y < streetCanvas.height; y += 40) {
-        ctx.fillRect(streetCanvas.width / 2 - 2, y, 4, 15);
+        ctx.fillRect(streetCanvas.width/2 - 2, y, 4, 15);
       }
       const streetTexture = new THREE.CanvasTexture(streetCanvas);
       streetTexture.wrapS = THREE.RepeatWrapping;
       streetTexture.wrapT = THREE.RepeatWrapping;
-      streetTexture.repeat.set(1, length / 64);
+      streetTexture.repeat.set(1, length/64);
       const streetMat = new THREE.MeshPhongMaterial({ map: streetTexture });
       const streetMesh = new THREE.Mesh(streetGeo, streetMat);
-      streetMesh.rotation.x = -Math.PI / 2;
+      streetMesh.rotation.x = -Math.PI/2;
       streetMesh.rotation.z = orientation;
-      streetMesh.position.set(x, 0.1, z);
+      streetMesh.position.set(x,0.1,z);
       scene.add(streetMesh);
       streetMesh.userData.boundingBox = new THREE.Box3().setFromObject(streetMesh);
       obstacles.push(streetMesh);
@@ -491,13 +530,13 @@
     function createCloud(yPos) {
       const cloudGroup = new THREE.Group();
       const material = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 });
-      const sphere1 = new THREE.Mesh(new THREE.SphereGeometry(15, 16, 16), material);
+      const sphere1 = new THREE.Mesh(new THREE.SphereGeometry(15,16,16), material);
       cloudGroup.add(sphere1);
-      const sphere2 = new THREE.Mesh(new THREE.SphereGeometry(10, 16, 16), material);
-      sphere2.position.set(12, 0, 0);
+      const sphere2 = new THREE.Mesh(new THREE.SphereGeometry(10,16,16), material);
+      sphere2.position.set(12,0,0);
       cloudGroup.add(sphere2);
-      const sphere3 = new THREE.Mesh(new THREE.SphereGeometry(8, 16, 16), material);
-      sphere3.position.set(-10, 3, 0);
+      const sphere3 = new THREE.Mesh(new THREE.SphereGeometry(8,16,16), material);
+      sphere3.position.set(-10,3,0);
       cloudGroup.add(sphere3);
       cloudGroup.position.set(
         THREE.MathUtils.randFloatSpread(2000),
@@ -508,13 +547,16 @@
     }
     
     function onWindowResize() {
-      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.aspect = window.innerWidth/window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
     }
     
     function onCameraDragStart(event) {
-      if (event.target.closest("#joystick-container") || event.target.closest("#throttleContainer") || event.target.closest("#hud") || event.target.closest("#startScreen"))
+      if (event.target.closest("#joystick-container") ||
+          event.target.closest("#throttleContainer") ||
+          event.target.closest("#hud") ||
+          event.target.closest("#startScreen"))
         return;
       isDraggingCamera = true;
       dragStartX = event.clientX;
@@ -534,7 +576,7 @@
     function onJoystickStart(event) {
       joystickActive = true;
       const rect = joystickContainer.getBoundingClientRect();
-      joystickCenter = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+      joystickCenter = { x: rect.left + rect.width/2, y: rect.top + rect.height/2 };
       updateJoystick(event);
     }
     function onJoystickMove(event) {
@@ -558,10 +600,10 @@
       }
       const dx = clientX - joystickCenter.x;
       const dy = clientY - joystickCenter.y;
-      const maxDist = joystickContainer.clientWidth / 2;
-      joystick.x = Math.max(-1, Math.min(1, dx / maxDist));
-      joystick.y = Math.max(-1, Math.min(1, dy / maxDist));
-      const thumbMax = maxDist - (joystickElem.clientWidth / 2);
+      const maxDist = joystickContainer.clientWidth/2;
+      joystick.x = Math.max(-1, Math.min(1, dx/maxDist));
+      joystick.y = Math.max(-1, Math.min(1, dy/maxDist));
+      const thumbMax = maxDist - (joystickElem.clientWidth/2);
       const moveX = Math.max(-thumbMax, Math.min(thumbMax, dx));
       const moveY = Math.max(-thumbMax, Math.min(thumbMax, dy));
       joystickElem.style.transform = `translate(${moveX}px, ${moveY}px)`;
@@ -575,27 +617,56 @@
       planeDir.normalize();
       const tailVector = planeDir.clone().multiplyScalar(trailingDistance);
       if (cameraYawOffset !== 0) {
-        tailVector.applyAxisAngle(new THREE.Vector3(0, 1, 0), cameraYawOffset);
+        tailVector.applyAxisAngle(new THREE.Vector3(0,1,0), cameraYawOffset);
       }
       const desiredPos = new THREE.Vector3().copy(plane.position)
-                              .add(new THREE.Vector3(0, verticalOffset, 0))
-                              .add(tailVector);
+                                  .add(new THREE.Vector3(0, verticalOffset, 0))
+                                  .add(tailVector);
       camera.position.lerp(desiredPos, 0.1);
       const lookAtPoint = new THREE.Vector3().copy(plane.position)
-                              .add(new THREE.Vector3(0, verticalOffset, 0));
+                                  .add(new THREE.Vector3(0, verticalOffset, 0));
       camera.lookAt(lookAtPoint);
     }
     
+    // Instead of reverting runway collisions, we skip collision checks for runways.
     function checkCollisions() {
       if (!plane) return;
       const planeBox = new THREE.Box3().setFromObject(plane);
+      // Only check obstacles that are not runways.
       for (let i = 0; i < obstacles.length; i++) {
+        if (obstacles[i].userData.isRunway) continue;
         if (obstacles[i].userData.boundingBox && planeBox.intersectsBox(obstacles[i].userData.boundingBox)) {
           plane.position.copy(prevPlanePosition);
           throttleSlider.value = 0;
           break;
         }
       }
+    }
+    
+    // Landing detection: If the plane lands on a runway (other than home) while throttle is 0 and altitude near ground.
+    function checkLanding() {
+      if (!plane) return;
+      if (parseFloat(throttleSlider.value) !== 0) return;
+      if (plane.position.y > 1.5) return; // not at ground level yet
+      const planeBox = new THREE.Box3().setFromObject(plane);
+      for (let i = 0; i < obstacles.length; i++) {
+        const obs = obstacles[i];
+        if (!obs.userData.isRunway) continue;
+        if (obs.userData.isHome) continue; // skip home runway
+        if (obs.userData.boundingBox && planeBox.intersectsBox(obs.userData.boundingBox)) {
+          // Successful landing detected!
+          if (!landingSuccessShown) {
+            landingSuccessShown = true;
+            showLandingMessage();
+          }
+        }
+      }
+    }
+    
+    function showLandingMessage() {
+      const landingMessage = document.getElementById("landingMessage");
+      landingMessage.style.display = "block";
+      setTimeout(() => { landingMessage.style.display = "none"; }, 3000);
     }
     
     function animate() {
@@ -613,7 +684,7 @@
         
         prevPlanePosition.copy(plane.position);
         const throttleValue = parseFloat(throttleSlider.value);
-        const forwardVec = new THREE.Vector3(0, 0, -1).applyQuaternion(plane.quaternion).normalize();
+        const forwardVec = new THREE.Vector3(0,0,-1).applyQuaternion(plane.quaternion).normalize();
         plane.position.add(forwardVec.multiplyScalar(throttleValue * speedFactor * delta));
         if (throttleValue < 1) {
           plane.position.y -= gravity * (1 - throttleValue) * delta;
@@ -627,6 +698,7 @@
         hudSpeedometer.innerHTML = `Speed: ${speedKmh.toFixed(1)} km/h`;
         
         checkCollisions();
+        checkLanding();
         
         if (plane.position.y > 6000) {
           spawnHighClouds();
@@ -638,8 +710,10 @@
     }
     
     function startGame() {
-      const startScreen = document.getElementById("startScreen");
-      startScreen.style.display = "none";
+      // Remove start screen.
+      document.getElementById("startScreen").style.display = "none";
+      // Reset landing flag.
+      landingSuccessShown = false;
       init();
       animate();
     }
