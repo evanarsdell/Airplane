@@ -299,12 +299,14 @@
       ground.position.y = 0;
       scene.add(ground);
 
-      // Create home runway (ID=1). Place it at (0,1.2,-10) so the plane spawns on top.
+      // Create home runway (ID=1) at (0,1.2,-10).
       homeRunway = createRunway(new THREE.Vector3(0,1.2,-10), 1, true);
 
-      // Additional runways with IDs 2, 3.
-      createRunway(new THREE.Vector3(200,1.2,-600), runwayCounter++);
-      createRunway(new THREE.Vector3(-200,1.2,-600), runwayCounter++);
+      // Additional runways, now much further away (approximately 1200 m further down).
+      createRunway(new THREE.Vector3(200,1.2,-1800), runwayCounter++);
+      createRunway(new THREE.Vector3(-200,1.2,-1800), runwayCounter++);
+      // Fourth runway added.
+      createRunway(new THREE.Vector3(0,1.2,-2500), runwayCounter++);
 
       // Add environment.
       spawnVillages(5);
@@ -422,7 +424,7 @@
 
       scene.add(runwayMesh);
 
-      // Store in runways array (runways are not added to obstacles to prevent collisions).
+      // Store in runways array.
       runways.push(runwayMesh);
 
       return runwayMesh;
@@ -433,52 +435,47 @@
       for (let i = 0; i < numPatches; i++) {
         let centerX = THREE.MathUtils.randFloatSpread(300);
         let centerZ = THREE.MathUtils.randFloat(-400, -100);
-        let count = Math.floor(THREE.MathUtils.randFloat(5, 10));
+        let count = Math.floor(THREE.MathUtils.randFloat(5,10));
         for (let j = 0; j < count; j++) {
-          let offsetX = THREE.MathUtils.randFloat(-20, 20);
-          let offsetZ = THREE.MathUtils.randFloat(-20, 20);
-          let scaleFactor = THREE.MathUtils.randFloat(0.5, 1.0);
-          createHouse(centerX + offsetX, centerZ + offsetZ, scaleFactor);
+          let offsetX = THREE.MathUtils.randFloat(-20,20);
+          let offsetZ = THREE.MathUtils.randFloat(-20,20);
+          let scaleFactor = THREE.MathUtils.randFloat(0.5,1.0);
+          createHouse(centerX+offsetX, centerZ+offsetZ, scaleFactor);
         }
       }
     }
     function spawnCity(count) {
-      let cityCenterX = THREE.MathUtils.randFloat(-50, 50);
+      let cityCenterX = THREE.MathUtils.randFloat(-50,50);
       let cityCenterZ = -800;
       for (let i = 0; i < count; i++) {
-        let offsetX = THREE.MathUtils.randFloat(-100, 100);
-        let offsetZ = THREE.MathUtils.randFloat(-50, 50);
-        createSkyscraper(cityCenterX + offsetX, cityCenterZ + offsetZ);
+        let offsetX = THREE.MathUtils.randFloat(-100,100);
+        let offsetZ = THREE.MathUtils.randFloat(-50,50);
+        createSkyscraper(cityCenterX+offsetX, cityCenterZ+offsetZ);
       }
     }
     function spawnDetailedCity() {
       for (let i = 0; i < 50; i++) {
-        let x = THREE.MathUtils.randFloat(-150, 150);
+        let x = THREE.MathUtils.randFloat(-150,150);
         let z = THREE.MathUtils.randFloat(-1000, -600);
         createSkyscraper(x, z, true);
       }
-      // Removed road creation here.
     }
     function spawnInfiniteLandscape() {
-      // Trees.
       for (let i = 0; i < 800; i++) {
         let x, z;
         do {
           x = THREE.MathUtils.randFloatSpread(4000);
-          z = THREE.MathUtils.randFloat(-4000, 4000);
+          z = THREE.MathUtils.randFloat(-4000,4000);
         } while (isOnHomeRunwayArea(x, z));
         createTree(x, z);
       }
-      // Buildings.
       for (let i = 0; i < 500; i++) {
         let x = THREE.MathUtils.randFloatSpread(4000);
-        let z = THREE.MathUtils.randFloat(-4000, 4000);
+        let z = THREE.MathUtils.randFloat(-4000,4000);
         createGenericBuilding(x, z);
       }
-      // Removed road creation here.
     }
     function isOnHomeRunwayArea(x, z) {
-      // Avoid spawning environmental items near the home runway.
       if (x > -15 && x < 15 && z < 10 && z > -210) return true;
       return false;
     }
@@ -638,7 +635,6 @@
       const maxDist = joystickContainer.clientWidth/2;
       joystick.x = Math.max(-1, Math.min(1, dx/maxDist));
       joystick.y = Math.max(-1, Math.min(1, dy/maxDist));
-
       const thumbMax = maxDist - (joystickElem.clientWidth/2);
       const moveX = Math.max(-thumbMax, Math.min(thumbMax, dx));
       const moveY = Math.max(-thumbMax, Math.min(thumbMax, dy));
@@ -697,10 +693,10 @@
     function checkLanding() {
       if (!plane) return;
       const throttleValue = parseFloat(throttleSlider.value);
-      if (throttleValue !== 0) return;    // must be zero to land
-      if (plane.position.y > 1.4) return; // must be near ground
+      if (throttleValue !== 0) return;
+      if (plane.position.y > 1.4) return;
 
-      // Check plane's position against each runway's local zone
+      // Check plane's position against each runway's local zone.
       for (const runway of runways) {
         if (runway.userData.isHome) continue;
         if (isPlaneOnRunwayZone(plane.position, runway)) {
@@ -717,37 +713,29 @@
      * Returns true if planePos is within the rectangle of runway (in runway local coordinates).
      */
     function isPlaneOnRunwayZone(planePos, runway) {
-      // Translate plane pos relative to runway center.
       let dx = planePos.x - runway.userData.center.x;
       let dz = planePos.z - runway.userData.center.z;
-
-      // Rotate by negative runway heading.
       let heading = runway.userData.heading;
       let cosH = Math.cos(-heading);
       let sinH = Math.sin(-heading);
       let localX = dx * cosH - dz * sinH;
       let localZ = dx * sinH + dz * cosH;
-
-      // Runway half-dimensions.
       let halfW = runway.userData.width / 2;
       let halfL = runway.userData.length / 2;
-
       return (localX > -halfW && localX < halfW && localZ > -halfL && localZ < halfL);
     }
 
     function handleLandingSuccess(runwayID) {
       const currentTime = performance.now();
-      const landingTime = ((currentTime - flightStartTime) / 1000).toFixed(1);
+      const landingTime = ((currentTime - flightStartTime)/1000).toFixed(1);
       const landingTimeNum = parseFloat(landingTime);
       if (landingTimeNum < highScore) {
         highScore = landingTimeNum;
       }
-
       landingMessage.innerHTML =
         `Great Job!<br>You landed on runway #${runwayID}<br>` +
         `Time: ${landingTime} s<br>High Score: ${highScore} s`;
       landingMessage.style.display = "block";
-
       setTimeout(() => {
         landingMessage.style.display = "none";
         landingSuccessShown = false;
@@ -762,8 +750,6 @@
 
       if (plane) {
         prevPlanePosition.copy(plane.position);
-
-        // Joystick-based orientation.
         const currentEuler = new THREE.Euler().setFromQuaternion(plane.quaternion, "YXZ");
         currentEuler.x += joystick.y * pitchFactor * delta;
         currentEuler.y -= joystick.x * yawFactor * delta;
@@ -774,21 +760,18 @@
         const throttleValue = parseFloat(throttleSlider.value);
         const forwardVec = new THREE.Vector3(0, 0, -1).applyQuaternion(plane.quaternion).normalize();
         plane.position.add(forwardVec.multiplyScalar(throttleValue * speedFactor * delta));
-
         if (throttleValue < 1) {
           plane.position.y -= gravity * (1 - throttleValue) * delta;
         }
         if (plane.position.y < 1.2) {
           plane.position.y = 1.2;
         }
-
         const speedKmh = throttleValue * speedFactor * 3.6;
         hudAltimeter.innerHTML = `Altitude: ${plane.position.y.toFixed(1)} m`;
         hudSpeedometer.innerHTML = `Speed: ${speedKmh.toFixed(1)} km/h`;
 
         checkCollisions();
         checkLanding();
-
         if (plane.position.y > 6000) {
           spawnHighClouds();
         }
