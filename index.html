@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <!-- Ensure proper scaling on mobile devices -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Flight Simulator – Runway, Villages & City</title>
+  <title>Flight Simulator – Expanded Landscape</title>
   <style>
     html, body {
       margin: 0;
@@ -17,6 +17,18 @@
     }
     canvas {
       display: block;
+    }
+    /* HUD (altimeter & speedometer) in the top left */
+    #hud {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      color: #fff;
+      background: rgba(0,0,0,0.7);
+      padding: 10px;
+      border-radius: 5px;
+      z-index: 30;
+      font-size: 14px;
     }
     /* Throttle slider (bottom-right) */
     #throttleContainer {
@@ -64,6 +76,11 @@
   </script>
 </head>
 <body>
+  <!-- HUD for altitude and speed -->
+  <div id="hud">
+    <div id="altimeter">Altitude: 0 m</div>
+    <div id="speedometer">Speed: 0 km/h</div>
+  </div>
   <!-- Throttle UI (starts at 0 so the plane is stationary) -->
   <div id="throttleContainer">
     <label for="throttle">Throttle</label>
@@ -79,8 +96,14 @@
     
     let scene, camera, renderer, plane, clock;
     let throttleSlider, joystickContainer, joystickElem;
+    const hudAltimeter = document.getElementById("altimeter");
+    const hudSpeedometer = document.getElementById("speedometer");
     const joystick = { x: 0, y: 0 };
     let cameraYawOffset = 0, isDraggingCamera = false, dragStartX = 0;
+    let prevPlanePosition = new THREE.Vector3();
+    
+    // Global obstacles array for runways and buildings.
+    const obstacles = [];
     
     // Target sizes for the plane (in meters)
     const targetPlaneLength = 8;  // desired length ~8 m
@@ -89,8 +112,9 @@
     let trailingDistance = targetPlaneLength * 3;  // ~24 m behind.
     let verticalOffset = targetPlaneHeight * 1.5;    // ~4.5 m above.
     
-    const speedFactor = 30;
-    const gravity = 9.8;
+    // Adjusted physics factors:
+    const speedFactor = 20;      // Reduced throttle sensitivity.
+    const gravity = 30;          // Increased gravity for more realism.
     const pitchFactor = 0.8;
     const maxBankAngle = THREE.MathUtils.degToRad(30);
     const yawFactor = 0.5;
@@ -119,7 +143,7 @@
       directionalLight.position.set(100, 100, 100);
       scene.add(directionalLight);
       
-      // Create impermeable grass ground at y = 0.
+      // Create large grass ground.
       const groundGeo = new THREE.PlaneGeometry(10000, 10000);
       const groundMat = new THREE.MeshPhongMaterial({ color: 0x228B22 });
       const ground = new THREE.Mesh(groundGeo, groundMat);
@@ -127,38 +151,21 @@
       ground.position.y = 0;
       scene.add(ground);
       
-      // Create an elevated runway.
-      // The runway is defined in proportion to the target plane.
-      const runwayWidth = targetPlaneLength * 2.5;  // ~20 m wide.
-      const runwayLength = targetPlaneLength * 25;    // ~200 m long.
-      const runwayGeo = new THREE.PlaneGeometry(runwayWidth, runwayLength);
-      runwayGeo.translate(0, 0, -runwayLength/2);
-      // Create a canvas texture for the runway: black with a centered yellow dotted line.
-      const runwayCanvas = document.createElement('canvas');
-      runwayCanvas.width = 64;
-      runwayCanvas.height = 256;
-      const ctx = runwayCanvas.getContext('2d');
-      ctx.fillStyle = "#000000";
-      ctx.fillRect(0, 0, runwayCanvas.width, runwayCanvas.height);
-      ctx.fillStyle = "#FFFF00";
-      for (let y = 0; y < runwayCanvas.height; y += 20) {
-        ctx.fillRect(runwayCanvas.width/2 - 2, y, 4, 5);
-      }
-      const runwayTexture = new THREE.CanvasTexture(runwayCanvas);
-      runwayTexture.wrapS = THREE.RepeatWrapping;
-      runwayTexture.wrapT = THREE.RepeatWrapping;
-      runwayTexture.repeat.set(1, runwayLength/64);
-      const runwayMat = new THREE.MeshPhongMaterial({ map: runwayTexture });
-      const runwayMesh = new THREE.Mesh(runwayGeo, runwayMat);
-      runwayMesh.rotation.x = -Math.PI/2;
-      // Elevate the runway so it is clearly visible.
-      runwayMesh.position.set(0, 1.2, 0);
-      scene.add(runwayMesh);
+      // Create Runways.
+      // Main runway (where the plane spawns): placed so that its back edge is at z=0.
+      const mainRunway = createRunway(new THREE.Vector3(0, 1.2, 0));
+      // Second runway: far away on the landscape.
+      createRunway(new THREE.Vector3(200, 1.2, -600));
+      // Third runway: on the opposite side.
+      createRunway(new THREE.Vector3(-200, 1.2, -600));
       
-      // Spawn additional structures:
-      spawnVillages(3);  // three clusters of houses (villages)
-      spawnCity();       // a cluster of skyscrapers (city)
-      spawnTrees(100);   // random trees
+      // Spawn additional structures.
+      spawnVillages(5);
+      spawnCity(15);        // Original city clusters.
+      spawnDetailedCity();  // A big, detailed city.
+      
+      // Spawn many trees and extra streets over a large area.
+      spawnInfiniteLandscape();
       
       // Get UI elements.
       throttleSlider = document.getElementById("throttle");
@@ -172,8 +179,9 @@
         "models/plane.glb",
         (gltf) => {
           plane = gltf.scene;
-          // Position the plane on the runway (ensure it sits on the elevated runway).
-          plane.position.set(0, 1.25, 0);
+          // Spawn the plane on the main runway near its back edge.
+          // (Back edge is at z = ~-0 since the runway geometry was translated.)
+          plane.position.set(0, 1.25, -10);
           plane.rotation.set(0, 0, 0); // Assume nose faces -Z.
           scene.add(plane);
           
@@ -216,6 +224,39 @@
       joystickContainer.addEventListener("pointercancel", onJoystickEnd);
     }
     
+    // Creates a runway with a black surface and a dotted yellow center line.
+    function createRunway(position) {
+      const runwayWidth = targetPlaneLength * 2.5;  // ~20 m wide.
+      const runwayLength = targetPlaneLength * 25;    // ~200 m long.
+      const runwayGeo = new THREE.PlaneGeometry(runwayWidth, runwayLength);
+      // Translate so that the back edge is at z = 0.
+      runwayGeo.translate(0, 0, -runwayLength/2);
+      // Create a canvas texture for the runway.
+      const runwayCanvas = document.createElement('canvas');
+      runwayCanvas.width = 64;
+      runwayCanvas.height = 256;
+      const ctx = runwayCanvas.getContext('2d');
+      ctx.fillStyle = "#000000";
+      ctx.fillRect(0, 0, runwayCanvas.width, runwayCanvas.height);
+      ctx.fillStyle = "#FFFF00";
+      for (let y = 0; y < runwayCanvas.height; y += 20) {
+        ctx.fillRect(runwayCanvas.width/2 - 2, y, 4, 5);
+      }
+      const runwayTexture = new THREE.CanvasTexture(runwayCanvas);
+      runwayTexture.wrapS = THREE.RepeatWrapping;
+      runwayTexture.wrapT = THREE.RepeatWrapping;
+      runwayTexture.repeat.set(1, runwayLength/64);
+      const runwayMat = new THREE.MeshPhongMaterial({ map: runwayTexture });
+      const runwayMesh = new THREE.Mesh(runwayGeo, runwayMat);
+      runwayMesh.rotation.x = -Math.PI/2;
+      runwayMesh.position.copy(position);
+      scene.add(runwayMesh);
+      // Make runway an impermeable obstacle.
+      runwayMesh.userData.boundingBox = new THREE.Box3().setFromObject(runwayMesh);
+      obstacles.push(runwayMesh);
+      return runwayMesh;
+    }
+    
     // Spawns clusters ("villages") of houses.
     function spawnVillages(numPatches) {
       for (let i = 0; i < numPatches; i++) {
@@ -231,11 +272,10 @@
       }
     }
     
-    // Spawns a city of skyscrapers in the distance.
-    function spawnCity() {
+    // Spawns a city cluster (less detailed).
+    function spawnCity(count) {
       let cityCenterX = THREE.MathUtils.randFloat(-50, 50);
       let cityCenterZ = -800;
-      let count = Math.floor(THREE.MathUtils.randFloat(10, 15));
       for (let i = 0; i < count; i++) {
         let offsetX = THREE.MathUtils.randFloat(-100, 100);
         let offsetZ = THREE.MathUtils.randFloat(-50, 50);
@@ -243,16 +283,54 @@
       }
     }
     
-    // Spawns random trees.
-    function spawnTrees(num) {
-      for (let i = 0; i < num; i++) {
+    // Spawns a detailed city with many buildings and some streets.
+    function spawnDetailedCity() {
+      // Place the detailed city over a larger area.
+      for (let i = 0; i < 50; i++) {
+        let x = THREE.MathUtils.randFloat(-150, 150);
+        let z = THREE.MathUtils.randFloat(-1000, -600);
+        createSkyscraper(x, z, true);
+      }
+      // Add several streets in the detailed city.
+      for (let i = 0; i < 5; i++) {
+        let x = THREE.MathUtils.randFloat(-150, 150);
+        let z = THREE.MathUtils.randFloat(-1000, -600);
+        createStreet(x, z, 200, 10, Math.random() > 0.5 ? 0 : Math.PI/2);
+      }
+    }
+    
+    // Spawns many trees and extra buildings/streets over a wide area.
+    function spawnInfiniteLandscape() {
+      // Spawn extra trees.
+      for (let i = 0; i < 500; i++) {
         let x, z;
         do {
-          x = THREE.MathUtils.randFloat(-300, 300);
-          z = THREE.MathUtils.randFloat(-500, 150);
-        } while (x > -15 && x < 15 && z > -200 && z < 0);
+          x = THREE.MathUtils.randFloatSpread(2000);
+          z = THREE.MathUtils.randFloat(-1500, 500);
+        } while (isOnRunway(x, z));
         createTree(x, z);
       }
+      // Spawn extra buildings.
+      for (let i = 0; i < 300; i++) {
+        let x = THREE.MathUtils.randFloatSpread(2000);
+        let z = THREE.MathUtils.randFloat(-1500, 500);
+        createGenericBuilding(x, z);
+      }
+      // Spawn extra streets.
+      for (let i = 0; i < 10; i++) {
+        let x = THREE.MathUtils.randFloatSpread(2000);
+        let z = THREE.MathUtils.randFloat(-1500, 500);
+        createStreet(x, z, 150, 8, Math.random() > 0.5 ? 0 : Math.PI/2);
+      }
+    }
+    
+    // Simple helper to decide if a coordinate falls on one of the runways.
+    function isOnRunway(x, z) {
+      // For simplicity, assume runways are roughly centered and 20m wide.
+      // Check main runway at (0, 0) spanning z from 0 to -200.
+      if (x > -15 && x < 15 && z < 10 && z > -210) return true;
+      // Could add extra conditions for the other runways if needed.
+      return false;
     }
     
     // Create a simple house (box body with cone roof).
@@ -272,36 +350,92 @@
       houseGroup.position.set(x, 0, z);
       houseGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
       scene.add(houseGroup);
+      // Make the house impermeable.
+      houseGroup.userData.boundingBox = new THREE.Box3().setFromObject(houseGroup);
+      obstacles.push(houseGroup);
     }
     
     // Create a skyscraper as a tall box.
-    function createSkyscraper(x, z) {
-      const height = THREE.MathUtils.randFloat(30, 60);
+    // The detailed parameter (if true) makes it a bit more varied.
+    function createSkyscraper(x, z, detailed = false) {
+      const height = THREE.MathUtils.randFloat(30, detailed ? 100 : 60);
       const geo = new THREE.BoxGeometry(20, height, 20);
-      const mat = new THREE.MeshPhongMaterial({ color: 0x999999 });
+      const mat = new THREE.MeshPhongMaterial({ color: detailed ? 0x666666 : 0x999999 });
       const building = new THREE.Mesh(geo, mat);
       building.position.y = height/2;
       building.position.set(x, 0, z);
       scene.add(building);
+      building.userData.boundingBox = new THREE.Box3().setFromObject(building);
+      obstacles.push(building);
     }
     
-    // Create a tree with a cylindrical trunk and spherical crown.
+    // Create a generic building with a random design.
+    function createGenericBuilding(x, z) {
+      const width = THREE.MathUtils.randFloat(10, 30);
+      const depth = THREE.MathUtils.randFloat(10, 30);
+      const height = THREE.MathUtils.randFloat(20, 80);
+      const geo = new THREE.BoxGeometry(width, height, depth);
+      const mat = new THREE.MeshPhongMaterial({ color: Math.random() * 0xffffff });
+      const building = new THREE.Mesh(geo, mat);
+      building.position.y = height/2;
+      building.position.set(x, 0, z);
+      scene.add(building);
+      building.userData.boundingBox = new THREE.Box3().setFromObject(building);
+      obstacles.push(building);
+    }
+    
+    // Create a tree with varied trunk and crown.
     function createTree(x, z) {
       const treeGroup = new THREE.Group();
-      const trunkGeo = new THREE.CylinderGeometry(0.3, 0.3, 2, 8);
+      // Randomize trunk height and radius.
+      const trunkHeight = THREE.MathUtils.randFloat(1.5, 3);
+      const trunkRadius = THREE.MathUtils.randFloat(0.2, 0.5);
+      const trunkGeo = new THREE.CylinderGeometry(trunkRadius, trunkRadius, trunkHeight, 8);
       const trunkMat = new THREE.MeshPhongMaterial({ color: 0x8B4513 });
       const trunk = new THREE.Mesh(trunkGeo, trunkMat);
-      trunk.position.y = 1;
+      trunk.position.y = trunkHeight/2;
       treeGroup.add(trunk);
-      const crownGeo = new THREE.SphereGeometry(1.5, 8, 8);
+      // Randomize crown size and shape.
+      const crownRadius = THREE.MathUtils.randFloat(1, 2);
+      const crownGeo = new THREE.SphereGeometry(crownRadius, 8, 8);
       const crownMat = new THREE.MeshPhongMaterial({ color: 0x2E8B57 });
       const crown = new THREE.Mesh(crownGeo, crownMat);
-      crown.position.y = 2.5;
+      crown.position.y = trunkHeight + crownRadius * 0.8;
       treeGroup.add(crown);
       treeGroup.position.set(x, 0, z);
       scene.add(treeGroup);
+      // Trees are not obstacles.
     }
     
+    // Create a street as a long black plane with dashed white center.
+    function createStreet(x, z, length, width, orientation = 0) {
+      const streetGeo = new THREE.PlaneGeometry(width, length);
+      // Create a canvas texture for street markings.
+      const streetCanvas = document.createElement('canvas');
+      streetCanvas.width = 64;
+      streetCanvas.height = 256;
+      const ctx = streetCanvas.getContext('2d');
+      ctx.fillStyle = "#000000";
+      ctx.fillRect(0, 0, streetCanvas.width, streetCanvas.height);
+      ctx.fillStyle = "#FFFFFF";
+      for (let y = 0; y < streetCanvas.height; y += 40) {
+        ctx.fillRect(streetCanvas.width/2 - 2, y, 4, 15);
+      }
+      const streetTexture = new THREE.CanvasTexture(streetCanvas);
+      streetTexture.wrapS = THREE.RepeatWrapping;
+      streetTexture.wrapT = THREE.RepeatWrapping;
+      streetTexture.repeat.set(1, length/64);
+      const streetMat = new THREE.MeshPhongMaterial({ map: streetTexture });
+      const streetMesh = new THREE.Mesh(streetGeo, streetMat);
+      streetMesh.rotation.x = -Math.PI/2;
+      streetMesh.rotation.z = orientation;
+      streetMesh.position.set(x, 0.1, z); // Slightly above ground.
+      scene.add(streetMesh);
+      streetMesh.userData.boundingBox = new THREE.Box3().setFromObject(streetMesh);
+      obstacles.push(streetMesh);
+    }
+    
+    // Update viewport on window resize.
     function onWindowResize() {
       camera.aspect = window.innerWidth/window.innerHeight;
       camera.updateProjectionMatrix();
@@ -310,7 +444,7 @@
     
     // --- Camera drag events ---
     function onCameraDragStart(event) {
-      if (event.target.closest("#joystick-container") || event.target.closest("#throttleContainer")) return;
+      if (event.target.closest("#joystick-container") || event.target.closest("#throttleContainer") || event.target.closest("#hud")) return;
       isDraggingCamera = true;
       dragStartX = event.clientX;
     }
@@ -368,10 +502,9 @@
       if (!plane) return;
       let planeDir = new THREE.Vector3();
       plane.getWorldDirection(planeDir);
-      // Zero out vertical component for horizontal direction.
+      // Zero out vertical component.
       planeDir.y = 0;
       planeDir.normalize();
-      // Instead of negating, use planeDir directly. This assumes getWorldDirection returns the correct facing.
       const tailVector = planeDir.clone().multiplyScalar(trailingDistance);
       if (cameraYawOffset !== 0) {
         tailVector.applyAxisAngle(new THREE.Vector3(0,1,0), cameraYawOffset);
@@ -385,28 +518,55 @@
       camera.lookAt(lookAtPoint);
     }
     
+    // Simple collision detection: if plane's bounding box intersects any obstacle, revert position.
+    function checkCollisions() {
+      if (!plane) return;
+      const planeBox = new THREE.Box3().setFromObject(plane);
+      for (let i = 0; i < obstacles.length; i++) {
+        if (obstacles[i].userData.boundingBox && planeBox.intersectsBox(obstacles[i].userData.boundingBox)) {
+          // Collision detected, revert the plane's position and zero throttle.
+          plane.position.copy(prevPlanePosition);
+          throttleSlider.value = 0;
+          break;
+        }
+      }
+    }
+    
     function animate() {
       requestAnimationFrame(animate);
       const delta = clock.getDelta();
       
       if (plane) {
+        // Store the previous position for collision rollback.
+        prevPlanePosition.copy(plane.position);
         const throttleValue = parseFloat(throttleSlider.value);
         const forwardVec = new THREE.Vector3(0, 0, -1).applyQuaternion(plane.quaternion).normalize();
+        // Move the plane forward.
         plane.position.add(forwardVec.multiplyScalar(throttleValue * speedFactor * delta));
+        // Apply gravity when throttle is low.
         if (throttleValue < 1) {
           plane.position.y -= gravity * (1 - throttleValue) * delta;
         }
+        // Prevent the plane from sinking below the runway height.
         if (plane.position.y < 1.25) {
           plane.position.y = 1.25;
         }
         
-        // Update plane orientation using Euler angles for proper banking.
+        // Update plane orientation using joystick input.
         const currentEuler = new THREE.Euler().setFromQuaternion(plane.quaternion, 'YXZ');
         currentEuler.x += joystick.y * pitchFactor * delta;
         currentEuler.y -= joystick.x * yawFactor * delta;
         const targetRoll = -joystick.x * maxBankAngle;
         currentEuler.z = THREE.MathUtils.lerp(currentEuler.z, targetRoll, 0.1);
         plane.quaternion.setFromEuler(currentEuler);
+        
+        // Check for collisions.
+        checkCollisions();
+        
+        // Update HUD.
+        hudAltimeter.innerHTML = `Altitude: ${plane.position.y.toFixed(1)} m`;
+        const speed = throttleValue * speedFactor;
+        hudSpeedometer.innerHTML = `Speed: ${speed.toFixed(1)} km/h`;
       }
       
       updateCamera(delta);
