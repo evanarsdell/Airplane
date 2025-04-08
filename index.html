@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <!-- Ensure proper scaling on mobile devices -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Flight Simulator – Runway, Structures & Trees</title>
+  <title>Flight Simulator – Runway, Villages & City</title>
   <style>
     html, body {
       margin: 0;
@@ -13,7 +13,7 @@
       height: 100%;
       background: #87CEEB;  /* Sky-blue background */
       font-family: sans-serif;
-      touch-action: none;   /* Disable default touch gestures */
+      touch-action: none;
     }
     canvas {
       display: block;
@@ -53,7 +53,7 @@
       touch-action: none;
     }
   </style>
-  <!-- Import map for Three.js modules -->
+  <!-- Import Three.js modules -->
   <script type="importmap">
     {
       "imports": {
@@ -64,12 +64,12 @@
   </script>
 </head>
 <body>
-  <!-- Throttle UI (starting at 0 so the plane is stationary) -->
+  <!-- Throttle UI (starts at 0 so the plane is stationary) -->
   <div id="throttleContainer">
     <label for="throttle">Throttle</label>
     <input type="range" id="throttle" min="0" max="5" step="0.1" value="0">
   </div>
-  <!-- Virtual Joystick -->
+  <!-- Virtual Joystick (bottom-left) -->
   <div id="joystick-container">
     <div id="joystick"></div>
   </div>
@@ -77,25 +77,23 @@
     import * as THREE from "three";
     import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
     
-    // Global objects and UI elements
     let scene, camera, renderer, plane, clock;
     let throttleSlider, joystickContainer, joystickElem;
-    const joystick = { x: 0, y: 0 }; // Range -1 to 1
+    const joystick = { x: 0, y: 0 };
     let cameraYawOffset = 0, isDraggingCamera = false, dragStartX = 0;
     
-    // Target dimensions for the plane (in meters)
-    const targetPlaneLength = 8;
-    const targetPlaneHeight = 3;
-    // Camera parameters computed from target plane size.
-    let trailingDistance = targetPlaneLength * 3;  // ~24 m behind.
-    let verticalOffset = targetPlaneHeight * 1.5;    // ~4.5 m above.
+    // Our target sizes (in meters) for the rescaled plane:
+    const targetPlaneLength = 8;  // Plane should be about 8 m long.
+    const targetPlaneHeight = 3;  // And about 3 m high.
+    // Camera trailing parameters based on those targets:
+    let trailingDistance = targetPlaneLength * 3;  // 24 m behind.
+    let verticalOffset = targetPlaneHeight * 1.5;    // 4.5 m above.
     
-    // Flight parameters
-    const speedFactor = 30;   // Forward speed multiplier.
-    const gravity = 9.8;      // m/s², for stall simulation.
-    const pitchFactor = 0.8;  // Pitch sensitivity.
-    const maxBankAngle = THREE.MathUtils.degToRad(30);  // Maximum bank (roll) in radians.
-    const yawFactor = 0.5;    // Yaw sensitivity.
+    const speedFactor = 30;
+    const gravity = 9.8;
+    const pitchFactor = 0.8;
+    const maxBankAngle = THREE.MathUtils.degToRad(30);
+    const yawFactor = 0.5;
     
     init();
     animate();
@@ -121,7 +119,7 @@
       directionalLight.position.set(100, 100, 100);
       scene.add(directionalLight);
       
-      // Create an impermeable grass ground (at y = 0).
+      // Create impermeable grass ground at y = 0.
       const groundGeo = new THREE.PlaneGeometry(10000, 10000);
       const groundMat = new THREE.MeshPhongMaterial({ color: 0x228B22 });
       const ground = new THREE.Mesh(groundGeo, groundMat);
@@ -129,11 +127,14 @@
       ground.position.y = 0;
       scene.add(ground);
       
-      // Create an elevated runway.
-      const runwayWidth = targetPlaneLength * 2.5;   // 8m*2.5=20m.
-      const runwayLength = targetPlaneLength * 25;     // 8m*25=200m.
+      // Create a clearly visible, elevated runway.
+      // We'll define the runway width proportional to target plane length.
+      const runwayWidth = targetPlaneLength * 2.5;   // ~20 m.
+      const runwayLength = targetPlaneLength * 25;     // ~200 m.
       const runwayGeo = new THREE.PlaneGeometry(runwayWidth, runwayLength);
+      // Translate so that the runway extends from z = 0 (start) to z = -runwayLength.
       runwayGeo.translate(0, 0, -runwayLength / 2);
+      // Create a canvas texture for the runway: black base with a yellow dotted centerline.
       const runwayCanvas = document.createElement('canvas');
       runwayCanvas.width = 64;
       runwayCanvas.height = 256;
@@ -142,7 +143,7 @@
       ctx.fillRect(0, 0, runwayCanvas.width, runwayCanvas.height);
       ctx.fillStyle = "#FFFF00";
       for (let y = 0; y < runwayCanvas.height; y += 20) {
-        ctx.fillRect(runwayCanvas.width / 2 - 2, y, 4, 5);
+        ctx.fillRect(runwayCanvas.width/2 - 2, y, 4, 5);
       }
       const runwayTexture = new THREE.CanvasTexture(runwayCanvas);
       runwayTexture.wrapS = THREE.RepeatWrapping;
@@ -151,32 +152,37 @@
       const runwayMat = new THREE.MeshPhongMaterial({ map: runwayTexture });
       const runwayMesh = new THREE.Mesh(runwayGeo, runwayMat);
       runwayMesh.rotation.x = -Math.PI / 2;
-      // Elevate the runway so it's clearly above the ground.
-      runwayMesh.position.set(0, 0.2, 0);
+      // Elevate the runway so that it is clearly at the same level as the plane.
+      runwayMesh.position.set(0, 1, 0);
       scene.add(runwayMesh);
       
-      // Spawn a large number of random houses and trees.
-      spawnHouses(50);
+      // Spawn several villages (patches of houses) at random positions away from the runway.
+      spawnVillages(3);  // Three clusters.
+      
+      // Spawn a city (a cluster of skyscrapers) in the distance.
+      spawnCity();
+      
+      // Spawn random trees.
       spawnTrees(100);
       
       // Get UI elements.
       throttleSlider = document.getElementById("throttle");
-      throttleSlider.value = 0;
+      throttleSlider.value = 0;  // Start with throttle at 0.
       joystickContainer = document.getElementById("joystick-container");
       joystickElem = document.getElementById("joystick");
       
-      // Load the plane model.
+      // Load the rescaled plane model.
       const loader = new GLTFLoader();
       loader.load(
         "models/plane.glb",
         (gltf) => {
           plane = gltf.scene;
-          // Position the plane at the rear edge of the runway (z = 0) on the ground.
-          plane.position.set(0, 0.05, 0);
+          // Position the plane on the runway.
+          plane.position.set(0, 1.05, 0);
           plane.rotation.set(0, 0, 0); // Model's nose should face -Z.
           scene.add(plane);
           
-          // Compute the plane's bounding box and normalize scale if necessary.
+          // Compute the plane's bounding box.
           const box = new THREE.Box3().setFromObject(plane);
           const size = new THREE.Vector3();
           box.getSize(size);
@@ -184,7 +190,7 @@
           const scaleFactor = targetPlaneLength / currentLength;
           plane.scale.multiplyScalar(scaleFactor);
           
-          // Recompute new size.
+          // Recompute bounding box after scaling.
           const newBox = new THREE.Box3().setFromObject(plane);
           const newSize = new THREE.Vector3();
           newBox.getSize(newSize);
@@ -215,27 +221,43 @@
       joystickContainer.addEventListener("pointercancel", onJoystickEnd);
     }
     
-    // Spawns a given number of houses at random positions around the area.
-    // Houses are not spawned in a "no spawn zone" near the runway center (x between -15 and 15, z between -runwayLength and 0).
-    function spawnHouses(num) {
-      for (let i = 0; i < num; i++) {
-        let x, z;
-        // Loop until a valid position is generated.
-        do {
-          x = THREE.MathUtils.randFloat(-200, 200);
-          z = THREE.MathUtils.randFloat(-400, 100);
-        } while (x > -15 && x < 15 && z > -200 && z < 0);
-        // Random scale between 1 and 1.5 (smaller than our fixed house prototypes).
-        const scaleFactor = THREE.MathUtils.randFloat(1, 1.5);
-        createHouse(x, z, scaleFactor);
+    // Spawn a given number of village patches at random locations.
+    function spawnVillages(numPatches) {
+      for (let i = 0; i < numPatches; i++) {
+        // Choose a random center position (avoid the runway area: say, x between 50 and 150, or -150 and -50; z between -300 and -100)
+        let centerX = THREE.MathUtils.randFloatSpread(300);
+        let centerZ = THREE.MathUtils.randFloat(-400, -100);
+        // Spawn 5-10 houses in a small patch.
+        let count = Math.floor(THREE.MathUtils.randFloat(5, 10));
+        for (let j = 0; j < count; j++) {
+          let offsetX = THREE.MathUtils.randFloat(-20, 20);
+          let offsetZ = THREE.MathUtils.randFloat(-20, 20);
+          // Random scale between 0.5 and 1.0 (smaller than fixed houses).
+          let scaleFactor = THREE.MathUtils.randFloat(0.5, 1.0);
+          createHouse(centerX + offsetX, centerZ + offsetZ, scaleFactor);
+        }
       }
     }
     
-    // Spawns a given number of trees at random positions.
-    // Trees are also not spawned in the no spawn zone near the runway center.
+    // Spawn a city of skyscrapers in the distance.
+    function spawnCity() {
+      // Choose a center for the city far away (for example, z = -800).
+      let cityCenterX = THREE.MathUtils.randFloat(-50, 50);
+      let cityCenterZ = -800;
+      // Spawn 10-15 skyscrapers.
+      let count = Math.floor(THREE.MathUtils.randFloat(10, 15));
+      for (let i = 0; i < count; i++) {
+        let offsetX = THREE.MathUtils.randFloat(-100, 100);
+        let offsetZ = THREE.MathUtils.randFloat(-50, 50);
+        createSkyscraper(cityCenterX + offsetX, cityCenterZ + offsetZ);
+      }
+    }
+    
+    // Spawn trees randomly.
     function spawnTrees(num) {
       for (let i = 0; i < num; i++) {
         let x, z;
+        // Avoid spawning trees in the runway patch (x between -15 and 15, z between -runwayLength and 0)
         do {
           x = THREE.MathUtils.randFloat(-300, 300);
           z = THREE.MathUtils.randFloat(-500, 150);
@@ -244,7 +266,7 @@
       }
     }
     
-    // Creates a simple house (box body and cone roof) at (x,z) scaled by scaleFactor.
+    // Create a simple house: a box body and cone roof.
     function createHouse(x, z, scaleFactor = 1) {
       const houseGroup = new THREE.Group();
       const bodyGeo = new THREE.BoxGeometry(10, 8, 10);
@@ -263,20 +285,29 @@
       scene.add(houseGroup);
     }
     
-    // Creates a simple tree with a cylindrical trunk and a spherical crown.
+    // Create a skyscraper as a simple tall box.
+    function createSkyscraper(x, z) {
+      const height = THREE.MathUtils.randFloat(30, 60);
+      const geo = new THREE.BoxGeometry(20, height, 20);
+      const mat = new THREE.MeshPhongMaterial({ color: 0x999999 });
+      const building = new THREE.Mesh(geo, mat);
+      building.position.y = height / 2;  // so it sits on the ground
+      building.position.set(x, 0, z);
+      scene.add(building);
+    }
+    
+    // Create a tree with a cylindrical trunk and a spherical crown.
     function createTree(x, z) {
       const treeGroup = new THREE.Group();
-      // Trunk.
       const trunkGeo = new THREE.CylinderGeometry(0.3, 0.3, 2, 8);
       const trunkMat = new THREE.MeshPhongMaterial({ color: 0x8B4513 });
       const trunk = new THREE.Mesh(trunkGeo, trunkMat);
-      trunk.position.y = 1; // half the trunk height
+      trunk.position.y = 1;
       treeGroup.add(trunk);
-      // Crown.
       const crownGeo = new THREE.SphereGeometry(1.5, 8, 8);
       const crownMat = new THREE.MeshPhongMaterial({ color: 0x2E8B57 });
       const crown = new THREE.Mesh(crownGeo, crownMat);
-      crown.position.y = 2.5; // on top of the trunk
+      crown.position.y = 2.5;
       treeGroup.add(crown);
       treeGroup.position.set(x, 0, z);
       scene.add(treeGroup);
@@ -288,7 +319,6 @@
       renderer.setSize(window.innerWidth, window.innerHeight);
     }
     
-    // Camera drag events for user-adjustable yaw.
     function onCameraDragStart(event) {
       if (event.target.closest("#joystick-container") || event.target.closest("#throttleContainer")) return;
       isDraggingCamera = true;
@@ -304,7 +334,6 @@
       isDraggingCamera = false;
     }
     
-    // Joystick pointer events.
     let joystickActive = false;
     let joystickCenter = { x: 0, y: 0 };
     function onJoystickStart(event) {
@@ -343,23 +372,21 @@
       joystickElem.style.transform = `translate(${moveX}px, ${moveY}px)`;
     }
     
-    // --- Updated updateCamera: using only yaw for horizontal trailing ---
+    // --- Updated updateCamera: use only yaw for horizontal trailing ---
     function updateCamera(delta) {
       if (!plane) return;
-      const yaw = plane.rotation.y; // extract yaw from Euler (we're using YXZ order implicitly)
-      // Compute a horizontal forward vector using only yaw.
-      const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
-      // Calculate tail vector.
+      const yaw = plane.rotation.y;
+      const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0,1,0), yaw);
       const tailVector = forward.clone().negate().multiplyScalar(trailingDistance);
       if (cameraYawOffset !== 0) {
-        tailVector.applyAxisAngle(new THREE.Vector3(0, 1, 0), cameraYawOffset);
+        tailVector.applyAxisAngle(new THREE.Vector3(0,1,0), cameraYawOffset);
       }
       const desiredPos = new THREE.Vector3().copy(plane.position)
-                            .add(new THREE.Vector3(0, verticalOffset, 0))
-                            .add(tailVector);
+                              .add(new THREE.Vector3(0, verticalOffset, 0))
+                              .add(tailVector);
       camera.position.lerp(desiredPos, 0.1);
       const lookAtPoint = new THREE.Vector3().copy(plane.position)
-                           .add(new THREE.Vector3(0, verticalOffset, 0));
+                              .add(new THREE.Vector3(0, verticalOffset, 0));
       camera.lookAt(lookAtPoint);
     }
     
@@ -374,8 +401,8 @@
         if (throttleValue < 1) {
           plane.position.y -= gravity * (1 - throttleValue) * delta;
         }
-        if (plane.position.y < 0.05) {
-          plane.position.y = 0.05;
+        if (plane.position.y < 1.05) { // Clamp to runway level.
+          plane.position.y = 1.05;
         }
         
         // Update plane orientation using Euler angles for proper banking.
