@@ -40,7 +40,7 @@
       z-index: 30;
       font-size: 14px;
     }
-    /* Throttle slider container (bottom-right) */
+    /* Throttle slider (bottom-right) */
     #throttleContainer {
       position: fixed;
       bottom: 20px;
@@ -50,14 +50,7 @@
       border-radius: 8px;
       z-index: 20;
     }
-    /* Rotate the throttle input so it runs vertically */
-    #throttleContainer input[type="range"] {
-      -webkit-appearance: none;
-      width: 150px;
-      transform: rotate(270deg);
-      /* Optional styling for the slider track and thumb */
-    }
-    /* Virtual joystick container now centered horizontally */
+    /* Virtual joystick now centered horizontally */
     #joystick-container {
       position: fixed;
       bottom: 20px;
@@ -119,8 +112,8 @@
   <!-- Start Screen Overlay -->
   <div id="startScreen">
     <h1>Flight Simulator</h1>
-    <p>Use the joystick (center of the screen) to steer and the throttle (bottom–right) to control engine speed.</p>
-    <p><span style="font-size: 48px;">↓</span><br>Drag the joystick to turn</p>
+    <p>Use the joystick (center of the screen) to steer and the throttle (bottom–right) to increase engine speed.</p>
+    <p><span style="font-size: 48px;">↓</span><br>Drag the joystick to move</p>
     <button id="startButton">Start Game</button>
   </div>
 
@@ -129,12 +122,12 @@
     <div id="altimeter">Altitude: 0 m</div>
     <div id="speedometer">Speed: 0 km/h</div>
   </div>
-  <!-- Throttle UI (vertical slider) -->
+  <!-- Throttle UI (always on the right) -->
   <div id="throttleContainer">
     <label for="throttle">Throttle</label>
     <input type="range" id="throttle" min="0" max="5" step="0.1" value="0">
   </div>
-  <!-- Virtual Joystick (centered horizontally) -->
+  <!-- Virtual Joystick (now centered horizontally) -->
   <div id="joystick-container">
     <div id="joystick"></div>
   </div>
@@ -156,6 +149,8 @@
     const joystick = { x: 0, y: 0 };
     let cameraYawOffset = 0, isDraggingCamera = false, dragStartX = 0;
     let prevPlanePosition = new THREE.Vector3();
+    let planeVelocity = new THREE.Vector3();  // For inertial physics
+    let highCloudsSpawned = false;
 
     // Array for obstacles (runways, buildings, etc.)
     const obstacles = [];
@@ -167,9 +162,9 @@
     let trailingDistance = targetPlaneLength * 3;  // ~24 m behind.
     let verticalOffset = targetPlaneHeight * 1.5;    // ~4.5 m above.
 
-    // Physics factors (reverted to original values):
-    const speedFactor = 30;      // original throttle sensitivity.
-    const gravity = 9.8;         // original gravity.
+    // Adjusted physics factors:
+    const speedFactor = 20;    // Reduced throttle sensitivity.
+    const gravity = 30;        // Increased gravity (more dramatic stall)
     const pitchFactor = 0.8;
     const maxBankAngle = THREE.MathUtils.degToRad(30);
     const yawFactor = 0.5;
@@ -211,9 +206,9 @@
       scene.add(ground);
 
       // Create Runways.
-      // Main runway: always at (0, 1.2, 0) so the plane spawns on it.
+      // Main runway: always at (0, 1.2, 0) (ensuring the plane spawns on it).
       createRunway(new THREE.Vector3(0, 1.2, 0));
-      // Additional runways.
+      // Additional runways in the landscape.
       createRunway(new THREE.Vector3(200, 1.2, -600));
       createRunway(new THREE.Vector3(-200, 1.2, -600));
 
@@ -359,9 +354,9 @@
       }
     }
 
-    // Spawns trees, extra buildings, and streets over a large area.
+    // Spawns trees, extra buildings, and streets over a larger area (for an “infinite” look).
     function spawnInfiniteLandscape() {
-      // Spawn many trees over a wide area.
+      // Spawn many trees over an area of ±2000 m.
       for (let i = 0; i < 800; i++) {
         let x, z;
         do {
@@ -504,7 +499,7 @@
     }
 
     // Create a cloud (a group of overlapping spheres).
-    // The yPos parameter sets the vertical level of the cloud.
+    // The yPos parameter allows setting the vertical level of the cloud.
     function createCloud(yPos) {
       const cloudGroup = new THREE.Group();
       const material = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 });
@@ -531,4 +526,161 @@
       renderer.setSize(window.innerWidth, window.innerHeight);
     }
 
-   
+    // --- Camera drag events ---
+    function onCameraDragStart(event) {
+      if (event.target.closest("#joystick-container") || event.target.closest("#throttleContainer") || event.target.closest("#hud") || event.target.closest("#startScreen"))
+        return;
+      isDraggingCamera = true;
+      dragStartX = event.clientX;
+    }
+    function onCameraDragMove(event) {
+      if (!isDraggingCamera) return;
+      const dx = event.clientX - dragStartX;
+      cameraYawOffset += dx * 0.005;
+      dragStartX = event.clientX;
+    }
+    function onCameraDragEnd(event) {
+      isDraggingCamera = false;
+    }
+
+    // --- Joystick pointer events ---
+    let joystickActive = false;
+    let joystickCenter = { x: 0, y: 0 };
+    function onJoystickStart(event) {
+      joystickActive = true;
+      const rect = joystickContainer.getBoundingClientRect();
+      joystickCenter = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+      updateJoystick(event);
+    }
+    function onJoystickMove(event) {
+      if (!joystickActive) return;
+      updateJoystick(event);
+    }
+    function onJoystickEnd(event) {
+      joystickActive = false;
+      joystick.x = 0;
+      joystick.y = 0;
+      joystickElem.style.transform = `translate(0px, 0px)`;
+    }
+    function updateJoystick(event) {
+      let clientX, clientY;
+      if (event.changedTouches && event.changedTouches.length > 0) {
+        clientX = event.changedTouches[0].clientX;
+        clientY = event.changedTouches[0].clientY;
+      } else {
+        clientX = event.clientX;
+        clientY = event.clientY;
+      }
+      const dx = clientX - joystickCenter.x;
+      const dy = clientY - joystickCenter.y;
+      const maxDist = joystickContainer.clientWidth / 2;
+      joystick.x = Math.max(-1, Math.min(1, dx / maxDist));
+      joystick.y = Math.max(-1, Math.min(1, dy / maxDist));
+      const thumbMax = maxDist - (joystickElem.clientWidth / 2);
+      const moveX = Math.max(-thumbMax, Math.min(thumbMax, dx));
+      const moveY = Math.max(-thumbMax, Math.min(thumbMax, dy));
+      joystickElem.style.transform = `translate(${moveX}px, ${moveY}px)`;
+    }
+
+    // --- Update camera to follow plane ---
+    function updateCamera(delta) {
+      if (!plane) return;
+      let planeDir = new THREE.Vector3();
+      plane.getWorldDirection(planeDir);
+      planeDir.y = 0;
+      planeDir.normalize();
+      const tailVector = planeDir.clone().multiplyScalar(trailingDistance);
+      if (cameraYawOffset !== 0) {
+        tailVector.applyAxisAngle(new THREE.Vector3(0, 1, 0), cameraYawOffset);
+      }
+      const desiredPos = new THREE.Vector3().copy(plane.position)
+                              .add(new THREE.Vector3(0, verticalOffset, 0))
+                              .add(tailVector);
+      camera.position.lerp(desiredPos, 0.1);
+      const lookAtPoint = new THREE.Vector3().copy(plane.position)
+                              .add(new THREE.Vector3(0, verticalOffset, 0));
+      camera.lookAt(lookAtPoint);
+    }
+
+    // Simple collision detection: if plane intersects an obstacle, revert its position and set throttle to 0.
+    function checkCollisions() {
+      if (!plane) return;
+      const planeBox = new THREE.Box3().setFromObject(plane);
+      for (let i = 0; i < obstacles.length; i++) {
+        if (obstacles[i].userData.boundingBox && planeBox.intersectsBox(obstacles[i].userData.boundingBox)) {
+          plane.position.copy(prevPlanePosition);
+          throttleSlider.value = 0;
+          break;
+        }
+      }
+    }
+
+    // Main animation loop.
+    function animate() {
+      requestAnimationFrame(animate);
+      const delta = clock.getDelta();
+
+      if (plane) {
+        // --- Joystick steering (restored as in earlier version) ---
+        const currentEuler = new THREE.Euler().setFromQuaternion(plane.quaternion, "YXZ");
+        currentEuler.x += joystick.y * pitchFactor * delta;
+        currentEuler.y -= joystick.x * yawFactor * delta;
+        const targetRoll = -joystick.x * maxBankAngle;
+        currentEuler.z = THREE.MathUtils.lerp(currentEuler.z, targetRoll, 0.1);
+        plane.quaternion.setFromEuler(currentEuler);
+
+        // --- Physics integration (with inertia) ---
+        prevPlanePosition.copy(plane.position);
+        const throttleValue = parseFloat(throttleSlider.value);
+        let forwardDir = new THREE.Vector3(0, 0, -1).applyQuaternion(plane.quaternion).normalize();
+        let acceleration = forwardDir.multiplyScalar(throttleValue * speedFactor);
+        planeVelocity.add(acceleration.multiplyScalar(delta));
+        if (throttleValue < 1) {
+          planeVelocity.y -= gravity * (1 - throttleValue) * delta;
+        }
+        // Apply some damping.
+        planeVelocity.multiplyScalar(0.995);
+        if (throttleValue < 0.1) {
+          planeVelocity.x *= 0.98;
+          planeVelocity.z *= 0.98;
+        }
+        plane.position.add(planeVelocity.clone().multiplyScalar(delta));
+        if (plane.position.y < 1.2) {
+          plane.position.y = 1.2;
+          planeVelocity.y = 0;
+        }
+
+        // Update HUD.
+        hudAltimeter.innerHTML = `Altitude: ${plane.position.y.toFixed(1)} m`;
+        const horizontalSpeed = new THREE.Vector2(planeVelocity.x, planeVelocity.z).length();
+        const speedKmh = horizontalSpeed * 3.6;
+        hudSpeedometer.innerHTML = `Speed: ${speedKmh.toFixed(1)} km/h`;
+
+        // Check collisions.
+        checkCollisions();
+
+        // If the plane climbs above 6000 m, spawn high clouds (cloud cover) if not already.
+        if (plane.position.y > 6000 && !highCloudsSpawned) {
+          spawnHighClouds();
+          highCloudsSpawned = true;
+        }
+      }
+
+      updateCamera(delta);
+      renderer.render(scene, camera);
+    }
+
+    // --- Start Game: Remove overlay and initialize game.
+    function startGame() {
+      const startScreen = document.getElementById("startScreen");
+      startScreen.style.display = "none";
+      init();
+      animate();
+    }
+    
+    // Set up the start button event.
+    const startButton = document.getElementById("startButton");
+    startButton.addEventListener("click", startGame);
+  </script>
+</body>
+</html>
