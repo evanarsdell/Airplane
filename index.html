@@ -5,14 +5,21 @@
   <title>3D Flight Sim</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <link rel="stylesheet" href="style.css">
+  <!-- Import map tells the browser where to find 'three' -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.module.js"
+    }
+  }
+  </script>
 </head>
 <body>
   <div id="overlay">Please rotate your device to landscape</div>
   <canvas id="gameCanvas"></canvas>
-
-  <!-- Load Three.js as a module -->
+  <!-- Load your JavaScript as a module -->
   <script type="module">
-    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.module.js';
+    import * as THREE from 'three';
     import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.155.0/examples/jsm/loaders/GLTFLoader.js';
 
     let scene, camera, renderer;
@@ -25,14 +32,20 @@
     let keys = {};
 
     function init() {
+      console.log("Initializing scene...");
       scene = new THREE.Scene();
       scene.background = new THREE.Color(0x87CEEB);
 
       camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
       camera.position.set(0, 2, 10);
 
+      const canvas = document.getElementById("gameCanvas");
+      if (!canvas) {
+        console.error("Canvas element not found.");
+        return;
+      }
       renderer = new THREE.WebGLRenderer({
-        canvas: document.getElementById("gameCanvas"),
+        canvas: canvas,
         antialias: true
       });
       renderer.setSize(window.innerWidth, window.innerHeight);
@@ -48,19 +61,26 @@
       loader.load(
         'models/plane.glb',
         function (gltf) {
+          console.log("GLB model loaded successfully.");
           plane = gltf.scene;
           plane.scale.set(0.5, 0.5, 0.5);
           scene.add(plane);
         },
-        undefined,
+        function (xhr) {
+          console.log((xhr.loaded / xhr.total * 100) + '% loaded');
+        },
         function (error) {
-          console.error('Error loading 3D model:', error);
+          console.error("Error loading 3D model:", error);
+          const geometry = new THREE.BoxGeometry(1, 0.2, 1.5);
+          const material = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+          plane = new THREE.Mesh(geometry, material);
+          scene.add(plane);
         }
       );
 
       window.addEventListener('resize', onWindowResize, false);
-      document.addEventListener('keydown', (e) => keys[e.code] = true);
-      document.addEventListener('keyup', (e) => keys[e.code] = false);
+      document.addEventListener('keydown', (e) => keys[e.code] = true, false);
+      document.addEventListener('keyup', (e) => keys[e.code] = false, false);
 
       animate();
     }
@@ -76,10 +96,10 @@
       let dt = clock.getDelta();
 
       if (plane) {
-        if (keys['ArrowUp']) pitch += 0.02;
-        if (keys['ArrowDown']) pitch -= 0.02;
-        if (keys['ArrowLeft']) roll += 0.02;
-        if (keys['ArrowRight']) roll -= 0.02;
+        if (keys['ArrowUp']) { pitch += 0.02; }
+        if (keys['ArrowDown']) { pitch -= 0.02; }
+        if (keys['ArrowLeft']) { roll += 0.02; }
+        if (keys['ArrowRight']) { roll -= 0.02; }
 
         plane.rotation.x = pitch;
         plane.rotation.z = roll;
