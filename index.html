@@ -2,131 +2,219 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>3D Flight Sim</title>
+  <!-- Ensure proper scaling on mobile devices -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <link rel="stylesheet" href="style.css">
-  <!-- Import map tells the browser where to resolve 'three' -->
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.module.js"
+  <title>Mobile Flight Simulator</title>
+  <style>
+    /* Remove default margins and ensure full screen usage */
+    body {
+      margin: 0;
+      overflow: hidden;
+      font-family: sans-serif;
+      background: #87CEEB; /* fallback sky blue */
     }
-  }
+    /* Style for the throttle slider container */
+    #throttleContainer {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: rgba(255, 255, 255, 0.8);
+      padding: 10px;
+      border-radius: 8px;
+      z-index: 10;
+    }
+    /* Style for the motion permission button */
+    #motionButton {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      background: rgba(255, 255, 255, 0.8);
+      padding: 10px 15px;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      z-index: 10;
+      cursor: pointer;
+    }
+  </style>
+  <!-- Import map to load Three.js as an ES module -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.152.2/build/three.module.js",
+        "three/examples/jsm/loaders/GLTFLoader.js": "https://unpkg.com/three@0.152.2/examples/jsm/loaders/GLTFLoader.js"
+      }
+    }
   </script>
 </head>
 <body>
-  <div id="overlay">Please rotate your device to landscape</div>
-  <canvas id="gameCanvas"></canvas>
-  <!-- Load your app code as an ES module -->
+  <!-- Button to ask for motion (accelerometer) permission on iOS -->
+  <button id="motionButton">Enable Motion Controls</button>
+  <!-- Throttle slider UI element -->
+  <div id="throttleContainer">
+    <label for="throttle">Throttle</label>
+    <input type="range" id="throttle" min="0" max="5" step="0.1" value="1">
+  </div>
+  <!-- All game code in one module script -->
   <script type="module">
-    import * as THREE from 'three';
-    import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.155.0/examples/jsm/loaders/GLTFLoader.js';
+    import * as THREE from "three";
+    import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
-    let scene, camera, renderer;
-    let plane = null;
-    let clock = new THREE.Clock();
+    let scene, camera, renderer, plane;
+    let clock, forwardSpeed = 1;
+    const throttle = document.getElementById("throttle");
 
-    let pitch = 0;
-    let roll = 0;
-    let speed = 0.1;
-    let keys = {};
+    // Variables to store the latest orientation values (in degrees)
+    let deviceBeta = 0, deviceGamma = 0;
 
+    // Initialize Three.js essentials and scene objects
     function init() {
-      console.log("Initializing scene...");
+      // Create the scene with a blue-sky background
       scene = new THREE.Scene();
       scene.background = new THREE.Color(0x87CEEB);
 
-      camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-      camera.position.set(0, 2, 10);
+      // Setup camera with perspective projection
+      camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 10000);
 
-      const canvas = document.getElementById("gameCanvas");
-      if (!canvas) {
-        console.error("Canvas element not found.");
-        return;
-      }
-      renderer = new THREE.WebGLRenderer({
-        canvas: canvas,
-        antialias: true
-      });
+      // Create the WebGL renderer; limit pixel ratio for performance on high-dpi screens
+      renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      document.body.appendChild(renderer.domElement);
 
-      // Add lights
-      const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+      // Add ambient and directional lighting to light the scene
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
       scene.add(ambientLight);
+
       const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-      directionalLight.position.set(10, 10, 5);
+      directionalLight.position.set(100, 100, 100);
       scene.add(directionalLight);
 
-      // Load the GLB model
+      // Create a large green ground (simulating grassy terrain)
+      const groundGeometry = new THREE.PlaneGeometry(10000, 10000);
+      const groundMaterial = new THREE.MeshPhongMaterial({ color: 0x228B22 });
+      const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+      ground.rotation.x = -Math.PI / 2;
+      scene.add(ground);
+
+      // Create a runway strip directly under the plane spawn.
+      // Raised slightly to avoid z-fighting with the ground.
+      const runwayWidth = 10;
+      const runwayLength = 200;
+      const runwayGeometry = new THREE.PlaneGeometry(runwayWidth, runwayLength);
+      const runwayMaterial = new THREE.MeshPhongMaterial({ color: 0x333333 });
+      const runway = new THREE.Mesh(runwayGeometry, runwayMaterial);
+      runway.rotation.x = -Math.PI / 2;
+      runway.position.set(0, 0.02, 0); // centered under spawn; adjust if needed
+      scene.add(runway);
+
+      // Load the 3D plane model from models/plane.glb
       const loader = new GLTFLoader();
       loader.load(
-        'models/plane.glb',
+        "models/plane.glb",
         function (gltf) {
-          console.log("GLB model loaded successfully.");
           plane = gltf.scene;
-          // Reset position to be sure it’s centered
-          plane.position.set(0, 0, 0);
-          // Adjust scale if needed (tweak these numbers if the model is too large or small)
-          plane.scale.set(0.5, 0.5, 0.5);
+          // Set initial position of the plane slightly above ground
+          plane.position.set(0, 2, 0);
           scene.add(plane);
-          console.log("Plane added to scene:", plane);
+          // Optionally, you can adjust the initial rotation/orientation here if needed.
+          // Set an initial camera position relative to the plane
+          updateCamera();
         },
-        function (xhr) {
-          // Log progress—sometimes percentages may exceed 100% depending on how total is calculated.
-          console.log((xhr.loaded / xhr.total * 100).toFixed(2) + '% loaded');
-        },
+        undefined,
         function (error) {
-          console.error("Error loading plane.glb:", error);
-          // Fallback: create a red cube if model fails to load
-          const geometry = new THREE.BoxGeometry(1, 0.2, 1.5);
-          const material = new THREE.MeshStandardMaterial({ color: 0xff0000 });
-          plane = new THREE.Mesh(geometry, material);
-          scene.add(plane);
-          console.log("Fallback red cube added to scene.");
+          console.error("An error happened while loading the plane model:", error);
         }
       );
 
-      window.addEventListener('resize', onWindowResize, false);
-      document.addEventListener('keydown', (e) => keys[e.code] = true, false);
-      document.addEventListener('keyup', (e) => keys[e.code] = false, false);
-
-      animate();
+      clock = new THREE.Clock();
+      window.addEventListener("resize", onWindowResize);
     }
 
+    // Handle window resize events.
     function onWindowResize() {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
     }
 
+    // Update the camera to follow the plane—position it behind and above.
+    function updateCamera() {
+      if (!plane) return;
+      // Define an offset vector: up 5 and back 10 (relative to the plane)
+      const offset = new THREE.Vector3(0, 5, 10);
+      // Rotate the offset according to the plane’s current orientation
+      offset.applyQuaternion(plane.quaternion);
+      // The desired camera position is the plane’s position plus the offset
+      const desiredPosition = new THREE.Vector3().copy(plane.position).add(offset);
+      // Smoothly interpolate the camera position for a smooth follow effect
+      camera.position.lerp(desiredPosition, 0.1);
+      camera.lookAt(plane.position);
+    }
+
+    // Handle device orientation events.
+    function handleOrientation(event) {
+      // event.beta: front-back tilt (pitch) in degrees; event.gamma: left-right tilt (roll) in degrees.
+      deviceBeta = event.beta || 0;
+      deviceGamma = event.gamma || 0;
+    }
+
+    // Request permission for motion controls on iOS if needed.
+    const motionButton = document.getElementById("motionButton");
+    motionButton.addEventListener("click", function () {
+      if (typeof DeviceOrientationEvent.requestPermission === "function") {
+        DeviceOrientationEvent.requestPermission()
+          .then(permissionState => {
+            if (permissionState === "granted") {
+              window.addEventListener("deviceorientation", handleOrientation);
+              motionButton.style.display = "none";
+            }
+          })
+          .catch(console.error);
+      } else {
+        // For non-iOS devices, simply add the event listener.
+        window.addEventListener("deviceorientation", handleOrientation);
+        motionButton.style.display = "none";
+      }
+    });
+
+    // The animation loop updates motion and renders each frame.
     function animate() {
       requestAnimationFrame(animate);
-      const dt = clock.getDelta();
+      const delta = clock.getDelta();
 
       if (plane) {
-        // If no keyboard input is detected on mobile, the plane stays static.
-        // It might be off-camera if its original pivot is off—so we ensure its position is (0,0,0) at start.
-        if (keys['ArrowUp']) pitch += 0.02;
-        if (keys['ArrowDown']) pitch -= 0.02;
-        if (keys['ArrowLeft']) roll += 0.02;
-        if (keys['ArrowRight']) roll -= 0.02;
+        // Update the plane’s forward speed based on the throttle slider.
+        forwardSpeed = parseFloat(throttle.value);
 
-        plane.rotation.x = pitch;
-        plane.rotation.z = roll;
+        // Compute a smooth device-orientation adjustment.
+        // Convert beta (pitch) and gamma (roll) from degrees to radians.
+        const desiredPitch = THREE.MathUtils.degToRad(deviceBeta);
+        const desiredRoll  = THREE.MathUtils.degToRad(deviceGamma);
 
+        // Smoothly adjust the plane's pitch and roll.
+        // Here the device tilt controls the plane's tilting (pitch up/down and roll left/right)
+        plane.rotation.x = THREE.MathUtils.lerp(plane.rotation.x, desiredPitch, 0.1);
+        // Invert the roll value so that tilting the device left banks the plane left.
+        plane.rotation.z = THREE.MathUtils.lerp(plane.rotation.z, -desiredRoll, 0.1);
+
+        // Simulate a turning (yaw) effect from the bank (roll).
+        // A simple proportional control: a small turn rate proportional to the (radian) roll.
+        plane.rotation.y -= desiredRoll * delta * 0.5;
+
+        // Move the plane forward along its local negative Z-axis.
         const forward = new THREE.Vector3(0, 0, -1);
         forward.applyQuaternion(plane.quaternion);
-        plane.position.add(forward.multiplyScalar(speed));
+        plane.position.add(forward.multiplyScalar(forwardSpeed * delta));
 
-        const targetPos = plane.position.clone().add(new THREE.Vector3(0, 2, 10));
-        camera.position.lerp(targetPos, 0.1);
-        camera.lookAt(plane.position);
+        // Update the camera position to follow the plane.
+        updateCamera();
       }
-
       renderer.render(scene, camera);
     }
 
     init();
+    animate();
   </script>
 </body>
 </html>
