@@ -5,7 +5,7 @@
   <title>3D Flight Sim</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <link rel="stylesheet" href="style.css">
-  <!-- Import map tells the browser where to find 'three' -->
+  <!-- Import map tells the browser where to resolve 'three' -->
   <script type="importmap">
   {
     "imports": {
@@ -17,13 +17,13 @@
 <body>
   <div id="overlay">Please rotate your device to landscape</div>
   <canvas id="gameCanvas"></canvas>
-  <!-- Load your JavaScript as a module -->
+  <!-- Load your app code as an ES module -->
   <script type="module">
     import * as THREE from 'three';
     import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.155.0/examples/jsm/loaders/GLTFLoader.js';
 
     let scene, camera, renderer;
-    let plane;
+    let plane = null;
     let clock = new THREE.Clock();
 
     let pitch = 0;
@@ -50,31 +50,39 @@
       });
       renderer.setSize(window.innerWidth, window.innerHeight);
 
+      // Add lights
       const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
       scene.add(ambientLight);
-
       const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
       directionalLight.position.set(10, 10, 5);
       scene.add(directionalLight);
 
+      // Load the GLB model
       const loader = new GLTFLoader();
       loader.load(
         'models/plane.glb',
         function (gltf) {
           console.log("GLB model loaded successfully.");
           plane = gltf.scene;
+          // Reset position to be sure it’s centered
+          plane.position.set(0, 0, 0);
+          // Adjust scale if needed (tweak these numbers if the model is too large or small)
           plane.scale.set(0.5, 0.5, 0.5);
           scene.add(plane);
+          console.log("Plane added to scene:", plane);
         },
         function (xhr) {
-          console.log((xhr.loaded / xhr.total * 100) + '% loaded');
+          // Log progress—sometimes percentages may exceed 100% depending on how total is calculated.
+          console.log((xhr.loaded / xhr.total * 100).toFixed(2) + '% loaded');
         },
         function (error) {
-          console.error("Error loading 3D model:", error);
+          console.error("Error loading plane.glb:", error);
+          // Fallback: create a red cube if model fails to load
           const geometry = new THREE.BoxGeometry(1, 0.2, 1.5);
           const material = new THREE.MeshStandardMaterial({ color: 0xff0000 });
           plane = new THREE.Mesh(geometry, material);
           scene.add(plane);
+          console.log("Fallback red cube added to scene.");
         }
       );
 
@@ -93,13 +101,15 @@
 
     function animate() {
       requestAnimationFrame(animate);
-      let dt = clock.getDelta();
+      const dt = clock.getDelta();
 
       if (plane) {
-        if (keys['ArrowUp']) { pitch += 0.02; }
-        if (keys['ArrowDown']) { pitch -= 0.02; }
-        if (keys['ArrowLeft']) { roll += 0.02; }
-        if (keys['ArrowRight']) { roll -= 0.02; }
+        // If no keyboard input is detected on mobile, the plane stays static.
+        // It might be off-camera if its original pivot is off—so we ensure its position is (0,0,0) at start.
+        if (keys['ArrowUp']) pitch += 0.02;
+        if (keys['ArrowDown']) pitch -= 0.02;
+        if (keys['ArrowLeft']) roll += 0.02;
+        if (keys['ArrowRight']) roll -= 0.02;
 
         plane.rotation.x = pitch;
         plane.rotation.z = roll;
