@@ -83,11 +83,11 @@
     let cameraYawOffset = 0, isDraggingCamera = false, dragStartX = 0;
     
     // Target sizes for the plane (in meters)
-    const targetPlaneLength = 8;  // desired length ~8 m
-    const targetPlaneHeight = 3;  // desired height ~3 m
-    // Camera trailing parameters based on target sizes:
+    const targetPlaneLength = 8;  // desired length: ~8 m
+    const targetPlaneHeight = 3;  // desired height: ~3 m
+    // Camera parameters based on those targets:
     let trailingDistance = targetPlaneLength * 3;  // ~24 m behind.
-    let verticalOffset = targetPlaneHeight * 1.5;    // ~4.5 m above.
+    let verticalOffset = targetPlaneHeight * 1.5;    // ~4.5 m above the plane.
     
     const speedFactor = 30;
     const gravity = 9.8;
@@ -99,7 +99,7 @@
     animate();
     
     function init() {
-      // Create scene.
+      // Create the scene.
       scene = new THREE.Scene();
       scene.background = new THREE.Color(0x87CEEB);
       
@@ -119,7 +119,7 @@
       directionalLight.position.set(100, 100, 100);
       scene.add(directionalLight);
       
-      // Create impermeable grass ground at y = 0.
+      // Create an impermeable grass ground at y = 0.
       const groundGeo = new THREE.PlaneGeometry(10000, 10000);
       const groundMat = new THREE.MeshPhongMaterial({ color: 0x228B22 });
       const ground = new THREE.Mesh(groundGeo, groundMat);
@@ -128,12 +128,13 @@
       scene.add(ground);
       
       // Create an elevated runway.
-      // The runway is defined in proportion to the target plane.
+      // Runway dimensions are proportional to our target plane.
       const runwayWidth = targetPlaneLength * 2.5;  // ~20 m wide.
       const runwayLength = targetPlaneLength * 25;    // ~200 m long.
       const runwayGeo = new THREE.PlaneGeometry(runwayWidth, runwayLength);
       runwayGeo.translate(0, 0, -runwayLength/2);
-      // Create a canvas texture for the runway: black with a centered yellow dotted line.
+      
+      // Create a canvas texture for the runway: black with a yellow dotted line.
       const runwayCanvas = document.createElement('canvas');
       runwayCanvas.width = 64;
       runwayCanvas.height = 256;
@@ -152,17 +153,18 @@
       const runwayMesh = new THREE.Mesh(runwayGeo, runwayMat);
       runwayMesh.rotation.x = -Math.PI/2;
       // Elevate the runway so it is clearly visible.
-      runwayMesh.position.set(0, 1.2, 0);
+      // Set the runway at y = 1.0 so it sits nicely on top of the grass and supports the plane.
+      runwayMesh.position.set(0, 1.0, 0);
       scene.add(runwayMesh);
       
-      // Spawn additional structures:
-      spawnVillages(3);  // three clusters of houses (villages)
-      spawnCity();       // a cluster of skyscrapers (city)
-      spawnTrees(100);   // random trees
+      // Spawn additional structures, villages, city, and trees.
+      spawnVillages(3);
+      spawnCity();
+      spawnTrees(100);
       
       // Get UI elements.
       throttleSlider = document.getElementById("throttle");
-      throttleSlider.value = 0; // start with throttle off
+      throttleSlider.value = 0;  // throttle starts at 0.
       joystickContainer = document.getElementById("joystick-container");
       joystickElem = document.getElementById("joystick");
       
@@ -172,12 +174,12 @@
         "models/plane.glb",
         (gltf) => {
           plane = gltf.scene;
-          // Position the plane on the runway (ensure it sits on the elevated runway).
+          // Position the plane on the runway.
           plane.position.set(0, 1.25, 0);
-          plane.rotation.set(0, 0, 0); // Assume nose faces -Z.
+          plane.rotation.set(0, 0, 0);
           scene.add(plane);
           
-          // Compute the plane's bounding box and adjust scale if necessary.
+          // Compute the plane's bounding box and normalize scale if necessary.
           const box = new THREE.Box3().setFromObject(plane);
           const size = new THREE.Vector3();
           box.getSize(size);
@@ -203,20 +205,20 @@
       clock = new THREE.Clock();
       window.addEventListener("resize", onWindowResize);
       
-      // Set up camera drag events.
+      // Camera drag events.
       renderer.domElement.addEventListener("pointerdown", onCameraDragStart);
       renderer.domElement.addEventListener("pointermove", onCameraDragMove);
       renderer.domElement.addEventListener("pointerup", onCameraDragEnd);
       renderer.domElement.addEventListener("pointercancel", onCameraDragEnd);
       
-      // Set up joystick events.
+      // Joystick events.
       joystickContainer.addEventListener("pointerdown", onJoystickStart);
       joystickContainer.addEventListener("pointermove", onJoystickMove);
       joystickContainer.addEventListener("pointerup", onJoystickEnd);
       joystickContainer.addEventListener("pointercancel", onJoystickEnd);
     }
     
-    // Spawns clusters ("villages") of houses.
+    // Spawn clusters ("villages") of houses.
     function spawnVillages(numPatches) {
       for (let i = 0; i < numPatches; i++) {
         let centerX = THREE.MathUtils.randFloatSpread(300);
@@ -231,7 +233,7 @@
       }
     }
     
-    // Spawns a city of skyscrapers in the distance.
+    // Spawn a city of skyscrapers in the distance.
     function spawnCity() {
       let cityCenterX = THREE.MathUtils.randFloat(-50, 50);
       let cityCenterZ = -800;
@@ -243,7 +245,7 @@
       }
     }
     
-    // Spawns random trees.
+    // Spawn random trees.
     function spawnTrees(num) {
       for (let i = 0; i < num; i++) {
         let x, z;
@@ -255,7 +257,7 @@
       }
     }
     
-    // Create a simple house (box body with cone roof).
+    // Create a simple house (box plus cone roof).
     function createHouse(x, z, scaleFactor = 1) {
       const houseGroup = new THREE.Group();
       const bodyGeo = new THREE.BoxGeometry(10, 8, 10);
@@ -280,7 +282,7 @@
       const geo = new THREE.BoxGeometry(20, height, 20);
       const mat = new THREE.MeshPhongMaterial({ color: 0x999999 });
       const building = new THREE.Mesh(geo, mat);
-      building.position.y = height/2;
+      building.position.y = height / 2;
       building.position.set(x, 0, z);
       scene.add(building);
     }
@@ -308,7 +310,7 @@
       renderer.setSize(window.innerWidth, window.innerHeight);
     }
     
-    // --- Camera drag events ---
+    // Camera drag events.
     function onCameraDragStart(event) {
       if (event.target.closest("#joystick-container") || event.target.closest("#throttleContainer")) return;
       isDraggingCamera = true;
@@ -324,7 +326,7 @@
       isDraggingCamera = false;
     }
     
-    // --- Joystick pointer events ---
+    // Joystick pointer events.
     let joystickActive = false;
     let joystickCenter = { x: 0, y: 0 };
     function onJoystickStart(event) {
@@ -363,16 +365,16 @@
       joystickElem.style.transform = `translate(${moveX}px, ${moveY}px)`;
     }
     
-    // --- Updated updateCamera: compute trailing vector using world direction ---
+    // Updated updateCamera: uses plane.getWorldDirection for a full 360° trailing vector.
     function updateCamera(delta) {
       if (!plane) return;
       let planeDir = new THREE.Vector3();
       plane.getWorldDirection(planeDir);
-      // Zero out vertical component for horizontal direction.
+      // Zero out vertical component.
       planeDir.y = 0;
       planeDir.normalize();
-      // Instead of negating, use planeDir directly. This assumes getWorldDirection returns the correct facing.
-      const tailVector = planeDir.clone().multiplyScalar(trailingDistance);
+      // The tail vector is the opposite direction of where the plane is facing.
+      const tailVector = planeDir.clone().negate().multiplyScalar(trailingDistance);
       if (cameraYawOffset !== 0) {
         tailVector.applyAxisAngle(new THREE.Vector3(0,1,0), cameraYawOffset);
       }
