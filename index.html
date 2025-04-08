@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <!-- Prevent zooming and disable user scaling/touch callouts -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Flight Simulator – Final Version (Revised)</title>
+  <title>Flight Simulator – Final Version (Revised Environment)</title>
   <style>
     html, body {
       margin: 0;
@@ -34,7 +34,7 @@
       font-size: 14px;
     }
 
-    /* Timer + high score at top-right */
+    /* Timer + High Score at top-right */
     #timerDisplay, #highScoreDisplay {
       position: fixed;
       top: 20px;
@@ -48,11 +48,9 @@
       text-align: center;
       margin-bottom: 5px;
     }
-    #highScoreDisplay {
-      top: 70px;
-    }
+    #highScoreDisplay { top: 70px; }
 
-    /* Throttle slider container – placed bottom-right, no background. */
+    /* Throttle slider container – bottom-right, moved up */
     #throttleContainer {
       position: fixed;
       bottom: 80px;
@@ -85,7 +83,7 @@
       margin-top: -3px;
     }
 
-    /* Joystick container – bigger, red-tinted */
+    /* Joystick container – centered at bottom with red tint */
     #joystick-container {
       position: fixed;
       bottom: 20px;
@@ -111,11 +109,13 @@
       touch-action: none;
     }
 
-    /* Start screen overlay – center everything. */
+    /* Start screen overlay – fully centered */
     #startScreen {
       position: fixed;
-      top: 0; left: 0;
-      width: 100vw; height: 100vh;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
       background: rgba(0,0,0,0.85);
       color: #fff;
       z-index: 100;
@@ -145,11 +145,14 @@
       z-index: 50;
       font-size: 48px;
       color: yellow;
-      display: none;
+      background: rgba(0, 0, 0, 0.8);
+      padding: 20px;
+      border-radius: 10px;
       text-align: center;
+      display: none;
     }
 
-    /* Objective banner at top center – shows at game start for 5s. */
+    /* Objective banner at top center – shows for 5 seconds after start */
     #objectiveBanner {
       position: fixed;
       top: 0;
@@ -177,7 +180,6 @@
 </head>
 
 <body oncopy="return false;" onpaste="return false;" oncut="return false;">
-
   <!-- Start Screen Overlay -->
   <div id="startScreen">
     <h1>Flight Simulator</h1>
@@ -216,12 +218,11 @@
     import * as THREE from "three";
     import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
-    // Prevent copy/cut/paste events.
+    // Disable copy/cut/paste events.
     document.addEventListener('copy', e => e.preventDefault());
     document.addEventListener('cut', e => e.preventDefault());
     document.addEventListener('paste', e => e.preventDefault());
 
-    // Basic global variables for scene.
     let scene, camera, renderer, plane, clock;
     let throttleSlider, joystickContainer, joystickElem;
 
@@ -237,7 +238,7 @@
     const joystick = { x: 0, y: 0 };
     let cameraYawOffset = 0, isDraggingCamera = false, dragStartX = 0;
 
-    // For collisions (buildings, trees, etc.).
+    // For collisions.
     const obstacles = [];
 
     // For runways and landing detection.
@@ -264,12 +265,11 @@
     let highScore = Infinity;
     let landingSuccessShown = false;
 
-    // Fog environment.
+    // Fog.
     const fogColor = 0x87CEEB;
     const fogNear = 2000;
     const fogFar = 3000;
 
-    // For collision rollback.
     let prevPlanePosition = new THREE.Vector3();
 
     function init() {
@@ -292,7 +292,7 @@
       scene.add(directionalLight);
 
       // Ground plane.
-      const groundGeo = new THREE.PlaneGeometry(10000,10000);
+      const groundGeo = new THREE.PlaneGeometry(10000, 10000);
       const groundMat = new THREE.MeshPhongMaterial({ color: 0x228B22 });
       const ground = new THREE.Mesh(groundGeo, groundMat);
       ground.rotation.x = -Math.PI/2;
@@ -302,22 +302,17 @@
       // Create home runway (ID=1) at (0,1.2,-10).
       homeRunway = createRunway(new THREE.Vector3(0,1.2,-10), 1, true);
 
-      // Additional runways, now much further away (approximately 1200 m further down).
+      // Additional runways – placed further away.
       createRunway(new THREE.Vector3(200,1.2,-1800), runwayCounter++);
       createRunway(new THREE.Vector3(-200,1.2,-1800), runwayCounter++);
-      // Fourth runway added.
       createRunway(new THREE.Vector3(0,1.2,-2500), runwayCounter++);
 
-      // Add environment.
-      spawnVillages(5);
-      spawnCity(15);
-      spawnDetailedCity();
-      spawnInfiniteLandscape();
+      // Add environment (we remove roads and random cubes).
+      spawnEnvironment();
 
       // Clouds.
       spawnClouds();
 
-      // Start flight timer.
       flightStartTime = performance.now();
       updateTimerDisplay();
 
@@ -333,32 +328,26 @@
       joystickContainer = document.getElementById("joystick-container");
       joystickElem = document.getElementById("joystick");
 
-      // Load the plane.
+      // Load plane.
       const loader = new GLTFLoader();
       loader.load(
         "models/plane.glb",
         (gltf) => {
           plane = gltf.scene;
-          // Position plane on home runway.
           plane.position.set(0,1.2,-10);
           plane.rotation.set(0,0,0);
           scene.add(plane);
-
-          // Scale plane.
           const box = new THREE.Box3().setFromObject(plane);
           const size = new THREE.Vector3();
           box.getSize(size);
           const currentLength = size.z;
           const scaleFactor = targetPlaneLength / currentLength;
           plane.scale.multiplyScalar(scaleFactor);
-
-          // Recompute trailing distance.
           const newBox = new THREE.Box3().setFromObject(plane);
           const newSize = new THREE.Vector3();
           newBox.getSize(newSize);
           trailingDistance = newSize.z * 3;
           verticalOffset = newSize.y * 1.5;
-
           updateCamera(0);
         },
         undefined,
@@ -368,7 +357,6 @@
       clock = new THREE.Clock();
       window.addEventListener("resize", onWindowResize);
 
-      // Add camera + joystick event listeners.
       renderer.domElement.addEventListener("pointerdown", onCameraDragStart);
       renderer.domElement.addEventListener("pointermove", onCameraDragMove);
       renderer.domElement.addEventListener("pointerup", onCameraDragEnd);
@@ -381,15 +369,15 @@
     }
 
     /**
-     * Creates a runway, centered at 'position', with a given runwayID.
-     * If isHome is true, the runway is the home runway.
+     * Creates a runway with the given runwayID.
+     * If isHome is true, it is considered the home runway.
      */
     function createRunway(position, runwayID, isHome=false, heading=0) {
       const runwayWidth = targetPlaneLength * 2.5;
       const runwayLength = targetPlaneLength * 25;
       const runwayGeo = new THREE.PlaneGeometry(runwayWidth, runwayLength);
 
-      // Create a simple runway texture with dashed center lines.
+      // Create runway texture with dashed center lines.
       const runwayCanvas = document.createElement("canvas");
       runwayCanvas.width = 64;
       runwayCanvas.height = 256;
@@ -398,7 +386,7 @@
       ctx.fillRect(0, 0, runwayCanvas.width, runwayCanvas.height);
       ctx.fillStyle = "#FFFF00";
       for (let y = 0; y < runwayCanvas.height; y += 20) {
-        ctx.fillRect(runwayCanvas.width/2 -2, y, 4, 5);
+        ctx.fillRect(runwayCanvas.width/2 - 2, y, 4, 5);
       }
       const runwayTexture = new THREE.CanvasTexture(runwayCanvas);
       runwayTexture.minFilter = THREE.LinearFilter;
@@ -409,11 +397,8 @@
       const runwayMat = new THREE.MeshPhongMaterial({ map: runwayTexture });
       const runwayMesh = new THREE.Mesh(runwayGeo, runwayMat);
 
-      // Rotate so it lies flat (XZ plane), facing +Z if heading=0.
       runwayMesh.rotation.x = -Math.PI/2;
       runwayMesh.rotation.y = heading;
-
-      // Position & user data.
       runwayMesh.position.copy(position);
       runwayMesh.userData.center = position.clone();
       runwayMesh.userData.width = runwayWidth;
@@ -423,156 +408,94 @@
       runwayMesh.userData.isHome = isHome;
 
       scene.add(runwayMesh);
-
-      // Store in runways array.
       runways.push(runwayMesh);
 
       return runwayMesh;
     }
 
-    // Environment spawners.
-    function spawnVillages(numPatches) {
-      for (let i = 0; i < numPatches; i++) {
-        let centerX = THREE.MathUtils.randFloatSpread(300);
-        let centerZ = THREE.MathUtils.randFloat(-400, -100);
-        let count = Math.floor(THREE.MathUtils.randFloat(5,10));
-        for (let j = 0; j < count; j++) {
-          let offsetX = THREE.MathUtils.randFloat(-20,20);
-          let offsetZ = THREE.MathUtils.randFloat(-20,20);
-          let scaleFactor = THREE.MathUtils.randFloat(0.5,1.0);
-          createHouse(centerX+offsetX, centerZ+offsetZ, scaleFactor);
-        }
-      }
-    }
-    function spawnCity(count) {
-      let cityCenterX = THREE.MathUtils.randFloat(-50,50);
-      let cityCenterZ = -800;
-      for (let i = 0; i < count; i++) {
-        let offsetX = THREE.MathUtils.randFloat(-100,100);
-        let offsetZ = THREE.MathUtils.randFloat(-50,50);
-        createSkyscraper(cityCenterX+offsetX, cityCenterZ+offsetZ);
-      }
-    }
-    function spawnDetailedCity() {
-      for (let i = 0; i < 50; i++) {
-        let x = THREE.MathUtils.randFloat(-150,150);
-        let z = THREE.MathUtils.randFloat(-1000, -600);
-        createSkyscraper(x, z, true);
-      }
-    }
-    function spawnInfiniteLandscape() {
-      for (let i = 0; i < 800; i++) {
-        let x, z;
-        do {
-          x = THREE.MathUtils.randFloatSpread(4000);
-          z = THREE.MathUtils.randFloat(-4000,4000);
-        } while (isOnHomeRunwayArea(x, z));
-        createTree(x, z);
-      }
-      for (let i = 0; i < 500; i++) {
-        let x = THREE.MathUtils.randFloatSpread(4000);
-        let z = THREE.MathUtils.randFloat(-4000,4000);
-        createGenericBuilding(x, z);
-      }
-    }
-    function isOnHomeRunwayArea(x, z) {
-      if (x > -15 && x < 15 && z < 10 && z > -210) return true;
-      return false;
+    /* New environment spawner to create natural scenery.
+       This removes all cube buildings and streets.
+       It creates a series of hills, one mountain (with a white peak),
+       several small houses, and tall pine trees.
+       These are placed at fixed coordinates to give a natural map.
+       They are not added to the obstacles array (so they don't interfere with collisions or landing detection).
+    */
+    function spawnEnvironment() {
+      // Create hills.
+      createHill(-800, -500, 100, 50);
+      createHill(500, 100, 80, 40);
+      
+      // Create a mountain with white peak.
+      createMountain(1000, -1000, 150, 300);
+      
+      // Create small houses (placed away from runways).
+      createSmallHouse(-500, 200);
+      createSmallHouse(600, -700);
+      createSmallHouse(300, -400);
+      createSmallHouse(-300, -900);
+      
+      // Create tall pine trees.
+      createPineTree(-1000, 0);
+      createPineTree(800, -800);
+      createPineTree(0, -1500);
+      createPineTree(-600, -1200);
+      createPineTree(700, -300);
     }
 
-    // Basic environment items.
-    function createHouse(x, z, scaleFactor = 1) {
-      const houseGroup = new THREE.Group();
-      const bodyGeo = new THREE.BoxGeometry(10, 8, 10);
+    function createHill(x, z, radius, height) {
+      const hillGeo = new THREE.SphereGeometry(radius, 16, 16);
+      const hillMat = new THREE.MeshPhongMaterial({ color: 0x228B22 });
+      const hill = new THREE.Mesh(hillGeo, hillMat);
+      hill.scale.y = height / (2 * radius); // flatten the sphere to form a hill
+      hill.position.set(x, height/2, z);
+      scene.add(hill);
+    }
+
+    function createMountain(x, z, radius, height) {
+      const mountainGeo = new THREE.ConeGeometry(radius, height, 32);
+      const mountainMat = new THREE.MeshPhongMaterial({ color: 0x556B2F });
+      const mountain = new THREE.Mesh(mountainGeo, mountainMat);
+      mountain.position.set(x, height/2, z);
+      scene.add(mountain);
+      // Add a white peak.
+      const peakGeo = new THREE.SphereGeometry(radius/4, 16, 16);
+      const peakMat = new THREE.MeshPhongMaterial({ color: 0xffffff });
+      const peak = new THREE.Mesh(peakGeo, peakMat);
+      peak.position.set(x, height, z);
+      scene.add(peak);
+    }
+
+    function createSmallHouse(x, z) {
+      const house = new THREE.Group();
+      const bodyGeo = new THREE.BoxGeometry(10, 6, 8);
       const bodyMat = new THREE.MeshPhongMaterial({ color: 0x8B4513 });
-      const bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
-      bodyMesh.position.y = 4;
-      houseGroup.add(bodyMesh);
+      const body = new THREE.Mesh(bodyGeo, bodyMat);
+      body.position.y = 3;
+      house.add(body);
       const roofGeo = new THREE.ConeGeometry(6, 4, 4);
-      const roofMat = new THREE.MeshPhongMaterial({ color: 0x808080 });
-      const roofMesh = new THREE.Mesh(roofGeo, roofMat);
-      roofMesh.position.y = 10;
-      roofMesh.rotation.y = Math.PI/4;
-      houseGroup.add(roofMesh);
-      houseGroup.position.set(x, 0, z);
-      houseGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
-      scene.add(houseGroup);
-      houseGroup.userData.boundingBox = new THREE.Box3().setFromObject(houseGroup);
-      obstacles.push(houseGroup);
+      const roofMat = new THREE.MeshPhongMaterial({ color: 0xff0000 });
+      const roof = new THREE.Mesh(roofGeo, roofMat);
+      roof.position.y = 7;
+      roof.rotation.y = Math.PI/4;
+      house.add(roof);
+      house.position.set(x, 0, z);
+      scene.add(house);
     }
-    function createSkyscraper(x, z, detailed = false) {
-      const height = THREE.MathUtils.randFloat(30, detailed ? 100 : 60);
-      const geo = new THREE.BoxGeometry(20, height, 20);
-      const mat = new THREE.MeshPhongMaterial({ color: detailed ? 0x666666 : 0x999999 });
-      const building = new THREE.Mesh(geo, mat);
-      building.position.y = height / 2;
-      building.position.set(x, 0, z);
-      scene.add(building);
-      building.userData.boundingBox = new THREE.Box3().setFromObject(building);
-      obstacles.push(building);
-    }
-    function createGenericBuilding(x, z) {
-      const width = THREE.MathUtils.randFloat(10, 30);
-      const depth = THREE.MathUtils.randFloat(10, 30);
-      const height = THREE.MathUtils.randFloat(20, 80);
-      const geo = new THREE.BoxGeometry(width, height, depth);
-      const mat = new THREE.MeshPhongMaterial({ color: Math.random() * 0xffffff });
-      const building = new THREE.Mesh(geo, mat);
-      building.position.y = height / 2;
-      building.position.set(x, 0, z);
-      scene.add(building);
-      building.userData.boundingBox = new THREE.Box3().setFromObject(building);
-      obstacles.push(building);
-    }
-    function createTree(x, z) {
-      const treeGroup = new THREE.Group();
-      const trunkHeight = THREE.MathUtils.randFloat(1.5, 3);
-      const trunkRadius = THREE.MathUtils.randFloat(0.2, 0.5);
-      const trunkGeo = new THREE.CylinderGeometry(trunkRadius, trunkRadius, trunkHeight, 8);
+
+    function createPineTree(x, z) {
+      const tree = new THREE.Group();
+      const trunkGeo = new THREE.CylinderGeometry(0.5, 0.5, 8, 8);
       const trunkMat = new THREE.MeshPhongMaterial({ color: 0x8B4513 });
       const trunk = new THREE.Mesh(trunkGeo, trunkMat);
-      trunk.position.y = trunkHeight / 2;
-      treeGroup.add(trunk);
-      const crownRadius = THREE.MathUtils.randFloat(1, 2);
-      const crownGeo = new THREE.SphereGeometry(crownRadius, 8, 8);
-      const crownMat = new THREE.MeshPhongMaterial({ color: 0x2E8B57 });
-      const crown = new THREE.Mesh(crownGeo, crownMat);
-      crown.position.y = trunkHeight + crownRadius * 0.8;
-      treeGroup.add(crown);
-      treeGroup.position.set(x, 0, z);
-      scene.add(treeGroup);
-    }
-
-    // Clouds.
-    function spawnClouds() {
-      for (let i = 0; i < 120; i++) {
-        const cloud = createCloud(THREE.MathUtils.randFloat(300, 1000));
-        scene.add(cloud);
-      }
-    }
-    function spawnHighClouds() {
-      for (let i = 0; i < 120; i++) {
-        const cloud = createCloud(THREE.MathUtils.randFloat(6000, 6100));
-        scene.add(cloud);
-      }
-    }
-    function createCloud(yPos) {
-      const cloudGroup = new THREE.Group();
-      const material = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 });
-      const sphere1 = new THREE.Mesh(new THREE.SphereGeometry(15, 16, 16), material);
-      cloudGroup.add(sphere1);
-      const sphere2 = new THREE.Mesh(new THREE.SphereGeometry(10, 16, 16), material);
-      sphere2.position.set(12, 0, 0);
-      cloudGroup.add(sphere2);
-      const sphere3 = new THREE.Mesh(new THREE.SphereGeometry(8, 16, 16), material);
-      sphere3.position.set(-10, 3, 0);
-      cloudGroup.add(sphere3);
-      cloudGroup.position.set(
-        THREE.MathUtils.randFloatSpread(2000),
-        yPos,
-        THREE.MathUtils.randFloatSpread(2000)
-      );
-      return cloudGroup;
+      trunk.position.y = 4;
+      tree.add(trunk);
+      const foliageGeo = new THREE.ConeGeometry(3, 12, 8);
+      const foliageMat = new THREE.MeshPhongMaterial({ color: 0x228B22 });
+      const foliage = new THREE.Mesh(foliageGeo, foliageMat);
+      foliage.position.y = 12;
+      tree.add(foliage);
+      tree.position.set(x, 0, z);
+      scene.add(tree);
     }
 
     function onWindowResize() {
@@ -650,7 +573,7 @@
       planeDir.normalize();
       const tailVector = planeDir.clone().multiplyScalar(trailingDistance);
       if (cameraYawOffset !== 0) {
-        tailVector.applyAxisAngle(new THREE.Vector3(0, 1, 0), cameraYawOffset);
+        tailVector.applyAxisAngle(new THREE.Vector3(0,1,0), cameraYawOffset);
       }
       const desiredPos = new THREE.Vector3().copy(plane.position)
                                 .add(new THREE.Vector3(0, verticalOffset, 0))
@@ -688,7 +611,7 @@
     }
 
     /**
-     * Checks whether the plane is on any non-home runway (throttle=0, altitude low).
+     * Checks whether the plane is on any non-home runway (throttle = 0, altitude near ground).
      */
     function checkLanding() {
       if (!plane) return;
@@ -696,7 +619,6 @@
       if (throttleValue !== 0) return;
       if (plane.position.y > 1.4) return;
 
-      // Check plane's position against each runway's local zone.
       for (const runway of runways) {
         if (runway.userData.isHome) continue;
         if (isPlaneOnRunwayZone(plane.position, runway)) {
@@ -760,18 +682,21 @@
         const throttleValue = parseFloat(throttleSlider.value);
         const forwardVec = new THREE.Vector3(0, 0, -1).applyQuaternion(plane.quaternion).normalize();
         plane.position.add(forwardVec.multiplyScalar(throttleValue * speedFactor * delta));
+
         if (throttleValue < 1) {
           plane.position.y -= gravity * (1 - throttleValue) * delta;
         }
         if (plane.position.y < 1.2) {
           plane.position.y = 1.2;
         }
+
         const speedKmh = throttleValue * speedFactor * 3.6;
         hudAltimeter.innerHTML = `Altitude: ${plane.position.y.toFixed(1)} m`;
         hudSpeedometer.innerHTML = `Speed: ${speedKmh.toFixed(1)} km/h`;
 
         checkCollisions();
         checkLanding();
+
         if (plane.position.y > 6000) {
           spawnHighClouds();
         }
@@ -791,6 +716,83 @@
     }
 
     document.getElementById("startButton").addEventListener("click", startGame);
+
+    /* New Environment Functions – replacing random cube objects with natural scenery */
+
+    function spawnEnvironment() {
+      // Create hills.
+      createHill(-800, -500, 100, 50);
+      createHill(500, 100, 80, 40);
+      // Create mountain.
+      createMountain(1000, -1000, 150, 300);
+      // Create small houses.
+      createSmallHouse(-500, 200);
+      createSmallHouse(600, -700);
+      createSmallHouse(300, -400);
+      createSmallHouse(-300, -900);
+      // Create pine trees.
+      createPineTree(-1000, 0);
+      createPineTree(800, -800);
+      createPineTree(0, -1500);
+      createPineTree(-600, -1200);
+      createPineTree(700, -300);
+    }
+
+    function createHill(x, z, radius, height) {
+      const hillGeo = new THREE.SphereGeometry(radius, 16, 16);
+      const hillMat = new THREE.MeshPhongMaterial({ color: 0x228B22 });
+      const hill = new THREE.Mesh(hillGeo, hillMat);
+      hill.scale.y = height / (2 * radius);
+      hill.position.set(x, height / 2, z);
+      scene.add(hill);
+    }
+
+    function createMountain(x, z, radius, height) {
+      const mountainGeo = new THREE.ConeGeometry(radius, height, 32);
+      const mountainMat = new THREE.MeshPhongMaterial({ color: 0x556B2F });
+      const mountain = new THREE.Mesh(mountainGeo, mountainMat);
+      mountain.position.set(x, height / 2, z);
+      scene.add(mountain);
+      // White peak.
+      const peakGeo = new THREE.SphereGeometry(radius / 4, 16, 16);
+      const peakMat = new THREE.MeshPhongMaterial({ color: 0xffffff });
+      const peak = new THREE.Mesh(peakGeo, peakMat);
+      peak.position.set(x, height, z);
+      scene.add(peak);
+    }
+
+    function createSmallHouse(x, z) {
+      const house = new THREE.Group();
+      const bodyGeo = new THREE.BoxGeometry(10, 6, 8);
+      const bodyMat = new THREE.MeshPhongMaterial({ color: 0x8B4513 });
+      const body = new THREE.Mesh(bodyGeo, bodyMat);
+      body.position.y = 3;
+      house.add(body);
+      const roofGeo = new THREE.ConeGeometry(6, 4, 4);
+      const roofMat = new THREE.MeshPhongMaterial({ color: 0xff0000 });
+      const roof = new THREE.Mesh(roofGeo, roofMat);
+      roof.position.y = 7;
+      roof.rotation.y = Math.PI / 4;
+      house.add(roof);
+      house.position.set(x, 0, z);
+      scene.add(house);
+    }
+
+    function createPineTree(x, z) {
+      const tree = new THREE.Group();
+      const trunkGeo = new THREE.CylinderGeometry(0.5, 0.5, 8, 8);
+      const trunkMat = new THREE.MeshPhongMaterial({ color: 0x8B4513 });
+      const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+      trunk.position.y = 4;
+      tree.add(trunk);
+      const foliageGeo = new THREE.ConeGeometry(3, 12, 8);
+      const foliageMat = new THREE.MeshPhongMaterial({ color: 0x228B22 });
+      const foliage = new THREE.Mesh(foliageGeo, foliageMat);
+      foliage.position.y = 12;
+      tree.add(foliage);
+      tree.position.set(x, 0, z);
+      scene.add(tree);
+    }
   </script>
 </body>
 </html>
