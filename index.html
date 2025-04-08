@@ -2,18 +2,20 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <!-- Ensure proper scaling on mobile devices -->
+  <!-- Prevent default pinch zoom and ensure proper mobile scaling -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Mobile Flight Simulator</title>
+  <title>Mobile Flight Simulator with Zoomable Chase Camera</title>
   <style>
-    /* Remove default margins and ensure full screen usage */
-    body {
+    html, body {
       margin: 0;
+      padding: 0;
       overflow: hidden;
+      /* Disable touch actions so the mobile browser doesn't pinch zoom the page */
+      touch-action: none;
+      background: #87CEEB; /* fallback blue sky */
       font-family: sans-serif;
-      background: #87CEEB; /* fallback sky blue */
     }
-    /* Style for the throttle slider container */
+    /* Throttle slider container fixed to the bottom-right */
     #throttleContainer {
       position: fixed;
       bottom: 20px;
@@ -23,7 +25,7 @@
       border-radius: 8px;
       z-index: 10;
     }
-    /* Style for the motion permission button */
+    /* Motion permission button (for iOS) */
     #motionButton {
       position: fixed;
       top: 20px;
@@ -37,7 +39,7 @@
       cursor: pointer;
     }
   </style>
-  <!-- Import map to load Three.js as an ES module -->
+  <!-- Import map: Three.js and the GLTFLoader as ES modules -->
   <script type="importmap">
     {
       "imports": {
@@ -50,80 +52,86 @@
 <body>
   <!-- Button to ask for motion (accelerometer) permission on iOS -->
   <button id="motionButton">Enable Motion Controls</button>
-  <!-- Throttle slider UI element -->
+  <!-- Throttle slider UI fixed at the bottom-right -->
   <div id="throttleContainer">
     <label for="throttle">Throttle</label>
     <input type="range" id="throttle" min="0" max="5" step="0.1" value="1">
   </div>
-  <!-- All game code in one module script -->
+  <!-- All game code lives in this module script -->
   <script type="module">
     import * as THREE from "three";
     import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
+    // Global variables
     let scene, camera, renderer, plane;
     let clock, forwardSpeed = 1;
     const throttle = document.getElementById("throttle");
 
-    // Variables to store the latest orientation values (in degrees)
+    // Device orientation values (in degrees)
     let deviceBeta = 0, deviceGamma = 0;
 
-    // Initialize Three.js essentials and scene objects
+    // Camera chase settings – default trailing distance and vertical offset.
+    const defaultTrailingDistance = 10;
+    let currentTrailingDistance = defaultTrailingDistance;
+    const cameraVerticalOffset = 5;
+
+    // Variables to detect pinch gestures (for zooming the camera distance).
+    let isPinching = false;
+    let initialPinchDistance = 0;
+    let initialTrailingDistance = currentTrailingDistance;
+
+    // Initialize Three.js scene, objects, and lights.
     function init() {
-      // Create the scene with a blue-sky background
+      // Create scene with a blue-sky background.
       scene = new THREE.Scene();
       scene.background = new THREE.Color(0x87CEEB);
 
-      // Setup camera with perspective projection
+      // Setup perspective camera.
       camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 10000);
 
-      // Create the WebGL renderer; limit pixel ratio for performance on high-dpi screens
+      // Create WebGL renderer and set its size.
       renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setSize(window.innerWidth, window.innerHeight);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       document.body.appendChild(renderer.domElement);
 
-      // Add ambient and directional lighting to light the scene
+      // Add lighting.
       const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
       scene.add(ambientLight);
-
       const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
       directionalLight.position.set(100, 100, 100);
       scene.add(directionalLight);
 
-      // Create a large green ground (simulating grassy terrain)
+      // Create a massive green ground for grass.
       const groundGeometry = new THREE.PlaneGeometry(10000, 10000);
       const groundMaterial = new THREE.MeshPhongMaterial({ color: 0x228B22 });
       const ground = new THREE.Mesh(groundGeometry, groundMaterial);
       ground.rotation.x = -Math.PI / 2;
       scene.add(ground);
 
-      // Create a runway strip directly under the plane spawn.
-      // Raised slightly to avoid z-fighting with the ground.
-      const runwayWidth = 10;
-      const runwayLength = 200;
+      // Create a runway strip under the spawn point.
+      const runwayWidth = 10, runwayLength = 200;
       const runwayGeometry = new THREE.PlaneGeometry(runwayWidth, runwayLength);
       const runwayMaterial = new THREE.MeshPhongMaterial({ color: 0x333333 });
       const runway = new THREE.Mesh(runwayGeometry, runwayMaterial);
       runway.rotation.x = -Math.PI / 2;
-      runway.position.set(0, 0.02, 0); // centered under spawn; adjust if needed
+      runway.position.set(0, 0.02, 0);
       scene.add(runway);
 
-      // Load the 3D plane model from models/plane.glb
+      // Load the 3D plane model from models/plane.glb.
       const loader = new GLTFLoader();
       loader.load(
         "models/plane.glb",
         function (gltf) {
           plane = gltf.scene;
-          // Set initial position of the plane slightly above ground
           plane.position.set(0, 2, 0);
           scene.add(plane);
-          // Optionally, you can adjust the initial rotation/orientation here if needed.
-          // Set an initial camera position relative to the plane
-          updateCamera();
+          // Initial camera update.
+          updateCamera(0);
         },
         undefined,
         function (error) {
-          console.error("An error happened while loading the plane model:", error);
+          console.error("An error occurred while loading the plane model:", error);
         }
       );
 
@@ -131,35 +139,49 @@
       window.addEventListener("resize", onWindowResize);
     }
 
-    // Handle window resize events.
+    // Handle window resizing.
     function onWindowResize() {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
     }
 
-    // Update the camera to follow the plane—position it behind and above.
-    function updateCamera() {
+    // Update the camera position to follow the plane with a chase-camera effect.
+    // The camera is positioned behind the plane (using its forward vector)
+    // with an adjustable trailing distance and a fixed vertical offset.
+    function updateCamera(delta) {
       if (!plane) return;
-      // Define an offset vector: up 5 and back 10 (relative to the plane)
-      const offset = new THREE.Vector3(0, 5, 10);
-      // Rotate the offset according to the plane’s current orientation
-      offset.applyQuaternion(plane.quaternion);
-      // The desired camera position is the plane’s position plus the offset
-      const desiredPosition = new THREE.Vector3().copy(plane.position).add(offset);
-      // Smoothly interpolate the camera position for a smooth follow effect
+
+      // When not actively pinching, gradually reset the trailing distance to default.
+      if (!isPinching) {
+        currentTrailingDistance = THREE.MathUtils.lerp(currentTrailingDistance, defaultTrailingDistance, delta * 0.5);
+      }
+
+      // Get the plane's forward direction.
+      const forwardDir = new THREE.Vector3();
+      plane.getWorldDirection(forwardDir);
+
+      // Calculate desired camera position:
+      // Start at the plane's position, add upward offset, then subtract the forward direction scaled by trailing distance.
+      const desiredPosition = new THREE.Vector3().copy(plane.position)
+        .add(new THREE.Vector3(0, cameraVerticalOffset, 0))
+        .sub(forwardDir.multiplyScalar(currentTrailingDistance));
+
+      // Smoothly interpolate the camera's current position toward the desired position.
       camera.position.lerp(desiredPosition, 0.1);
-      camera.lookAt(plane.position);
+
+      // The camera should look in the forward direction.
+      const desiredLookAt = new THREE.Vector3().copy(plane.position).add(forwardDir);
+      camera.lookAt(desiredLookAt);
     }
 
-    // Handle device orientation events.
+    // Handle device orientation events (for tilt and steer).
     function handleOrientation(event) {
-      // event.beta: front-back tilt (pitch) in degrees; event.gamma: left-right tilt (roll) in degrees.
       deviceBeta = event.beta || 0;
       deviceGamma = event.gamma || 0;
     }
 
-    // Request permission for motion controls on iOS if needed.
+    // iOS requires explicit permission for DeviceOrientation events.
     const motionButton = document.getElementById("motionButton");
     motionButton.addEventListener("click", function () {
       if (typeof DeviceOrientationEvent.requestPermission === "function") {
@@ -172,44 +194,72 @@
           })
           .catch(console.error);
       } else {
-        // For non-iOS devices, simply add the event listener.
         window.addEventListener("deviceorientation", handleOrientation);
         motionButton.style.display = "none";
       }
     });
 
-    // The animation loop updates motion and renders each frame.
+    // Pinch gesture detection for zooming (adjusting trailing camera distance).
+    function getPinchDistance(touches) {
+      const dx = touches[0].clientX - touches[1].clientX;
+      const dy = touches[0].clientY - touches[1].clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    document.addEventListener("touchstart", function (e) {
+      if (e.touches.length === 2) {
+        isPinching = true;
+        initialPinchDistance = getPinchDistance(e.touches);
+        initialTrailingDistance = currentTrailingDistance;
+      }
+    }, { passive: false });
+
+    document.addEventListener("touchmove", function (e) {
+      if (isPinching && e.touches.length === 2) {
+        e.preventDefault(); // Prevent native pinch-zoom of the page.
+        const currentDistance = getPinchDistance(e.touches);
+        const scale = currentDistance / initialPinchDistance;
+        // Adjust trailing distance based on scale.
+        // Moving fingers apart increases the distance (zoom out), while pinching in decreases it (zoom in).
+        currentTrailingDistance = initialTrailingDistance / scale;
+        // Clamp the value to a reasonable range.
+        currentTrailingDistance = Math.min(Math.max(currentTrailingDistance, 5), 20);
+      }
+    }, { passive: false });
+
+    document.addEventListener("touchend", function (e) {
+      if (e.touches.length < 2) {
+        isPinching = false;
+      }
+    }, { passive: false });
+
+    // Main animation loop.
     function animate() {
       requestAnimationFrame(animate);
       const delta = clock.getDelta();
 
       if (plane) {
-        // Update the plane’s forward speed based on the throttle slider.
+        // Update forward speed from the throttle slider.
         forwardSpeed = parseFloat(throttle.value);
 
-        // Compute a smooth device-orientation adjustment.
-        // Convert beta (pitch) and gamma (roll) from degrees to radians.
+        // Use the device's orientation (beta and gamma) to steer the plane.
         const desiredPitch = THREE.MathUtils.degToRad(deviceBeta);
-        const desiredRoll  = THREE.MathUtils.degToRad(deviceGamma);
+        const desiredRoll = THREE.MathUtils.degToRad(deviceGamma);
 
-        // Smoothly adjust the plane's pitch and roll.
-        // Here the device tilt controls the plane's tilting (pitch up/down and roll left/right)
+        // Apply a smooth adjustment for pitch and roll.
         plane.rotation.x = THREE.MathUtils.lerp(plane.rotation.x, desiredPitch, 0.1);
-        // Invert the roll value so that tilting the device left banks the plane left.
         plane.rotation.z = THREE.MathUtils.lerp(plane.rotation.z, -desiredRoll, 0.1);
 
-        // Simulate a turning (yaw) effect from the bank (roll).
-        // A simple proportional control: a small turn rate proportional to the (radian) roll.
+        // Yaw (turning) is influenced by roll.
         plane.rotation.y -= desiredRoll * delta * 0.5;
 
         // Move the plane forward along its local negative Z-axis.
         const forward = new THREE.Vector3(0, 0, -1);
         forward.applyQuaternion(plane.quaternion);
         plane.position.add(forward.multiplyScalar(forwardSpeed * delta));
-
-        // Update the camera position to follow the plane.
-        updateCamera();
       }
+
+      updateCamera(delta);
       renderer.render(scene, camera);
     }
 
