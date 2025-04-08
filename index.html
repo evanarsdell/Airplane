@@ -11,9 +11,9 @@
       padding: 0;
       overflow: hidden;
       height: 100%;
-      background: #87CEEB;  /* Sky-blue background */
+      background: #87CEEB;
       font-family: sans-serif;
-      touch-action: none;   /* Disable default touch gestures */
+      touch-action: none;
     }
     canvas {
       display: block;
@@ -53,7 +53,6 @@
       touch-action: none;
     }
   </style>
-  <!-- Import map for Three.js modules -->
   <script type="importmap">
     {
       "imports": {
@@ -64,7 +63,7 @@
   </script>
 </head>
 <body>
-  <!-- Throttle UI (default value now 0 so plane is stationary) -->
+  <!-- Throttle UI (default throttle at 0) -->
   <div id="throttleContainer">
     <label for="throttle">Throttle</label>
     <input type="range" id="throttle" min="0" max="5" step="0.1" value="0">
@@ -77,63 +76,51 @@
     import * as THREE from "three";
     import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
     
-    // Global objects and UI variables
     let scene, camera, renderer, plane, clock;
     let throttleSlider, joystickContainer, joystickElem;
-    // Joystick values range from -1 to 1.
     const joystick = { x: 0, y: 0 };
-    // Variables for user-adjustable camera yaw (dragging)
     let cameraYawOffset = 0, isDraggingCamera = false, dragStartX = 0;
     
-    // Flight parameters – these are tuned for our (rescaled) plane.
-    // We desire a target plane length of ~8 m and height ~3 m.
-    let trailingDistance = 24;  // target: 8 m * 3
-    let verticalOffset = 4.5;   // target: 3 m * 1.5
-    const speedFactor = 30;     // Forward speed multiplier.
-    const gravity = 9.8;        // m/s²: used for stall simulation.
-    // For direct control via joystick:
-    const pitchFactor = 0.8;    // Affects pitch.
-    const maxBankAngle = THREE.MathUtils.degToRad(30);  // Maximum desired bank (roll) angle.
-    const yawFactor = 0.5;      // Yaw adjustment factor.
+    let trailingDistance = 24;  // 8m*3 = 24m trailing distance.
+    let verticalOffset = 4.5;   // 3m*1.5 = 4.5m.
+    const targetPlaneLength = 8;
+    const targetPlaneHeight = 3;
+    const speedFactor = 30;
+    const gravity = 9.8;
+    const pitchFactor = 0.8;
+    const maxBankAngle = THREE.MathUtils.degToRad(30);
+    const yawFactor = 0.5;
     
     init();
     animate();
     
     function init() {
-      // Create the scene with a solid background (no fog).
       scene = new THREE.Scene();
       scene.background = new THREE.Color(0x87CEEB);
       
-      // Set up camera.
-      camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 10000);
+      camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 10000);
       
-      // Set up renderer.
       renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setSize(window.innerWidth, window.innerHeight);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       document.body.appendChild(renderer.domElement);
       
-      // Basic lighting.
       const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
       scene.add(ambientLight);
       const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
       directionalLight.position.set(100, 100, 100);
       scene.add(directionalLight);
       
-      // Create a huge grass ground that is impermeable.
       const groundGeo = new THREE.PlaneGeometry(10000, 10000);
       const groundMat = new THREE.MeshPhongMaterial({ color: 0x228B22 });
       const ground = new THREE.Mesh(groundGeo, groundMat);
       ground.rotation.x = -Math.PI/2;
-      // Position ground exactly at y=0.
       ground.position.y = 0;
       scene.add(ground);
       
-      // Create an elevated runway.
       const runwayWidth = 20, runwayLength = 200;
       const runwayGeo = new THREE.PlaneGeometry(runwayWidth, runwayLength);
-      runwayGeo.translate(0, 0, -runwayLength/2); // Runway extends from 0 (start) to -runwayLength.
-      // Create a canvas texture: black background with yellow dotted centerline.
+      runwayGeo.translate(0, 0, -runwayLength/2);
       const runwayCanvas = document.createElement('canvas');
       runwayCanvas.width = 64;
       runwayCanvas.height = 256;
@@ -151,51 +138,40 @@
       const runwayMat = new THREE.MeshPhongMaterial({ map: runwayTexture });
       const runwayMesh = new THREE.Mesh(runwayGeo, runwayMat);
       runwayMesh.rotation.x = -Math.PI/2;
-      // Position the runway at ground level (y=0.05 so it sits clearly on the ground and is not below the grass).
       runwayMesh.position.set(0, 0.05, 0);
       scene.add(runwayMesh);
       
-      // Create a few houses and scale them up so they're in proportion.
       createHouse(-40, -150, 3);
       createHouse(40, -150, 3);
       createHouse(0, -250, 3);
       
-      // Get UI elements.
       throttleSlider = document.getElementById("throttle");
-      // Make sure the throttle starts at 0!
       throttleSlider.value = 0;
       joystickContainer = document.getElementById("joystick-container");
       joystickElem = document.getElementById("joystick");
       
-      // Load the rescaled plane model.
       const loader = new GLTFLoader();
       loader.load(
         "models/plane.glb",
         (gltf) => {
           plane = gltf.scene;
-          // Initially position the plane at the rear edge of the runway (z = 0) on the ground.
           plane.position.set(0, 0.05, 0);
-          plane.rotation.set(0, 0, 0); // Assumes model's nose faces -Z.
+          plane.rotation.set(0, 0, 0);
           scene.add(plane);
           
-          // Compute the plane's current bounding box.
           const box = new THREE.Box3().setFromObject(plane);
           const size = new THREE.Vector3();
           box.getSize(size);
-          
-          // If the plane is still off-scale, normalize it.
           const currentLength = size.z;
           const scaleFactor = targetPlaneLength / currentLength;
           plane.scale.multiplyScalar(scaleFactor);
           
-          // Recompute bounding box after scaling.
           const newBox = new THREE.Box3().setFromObject(plane);
           const newSize = new THREE.Vector3();
           newBox.getSize(newSize);
-          trailingDistance = newSize.z * 3;       // e.g., 8m * 3 = 24m.
-          verticalOffset = newSize.y * 1.5;         // e.g., 3m * 1.5 = 4.5m.
+          trailingDistance = newSize.z * 3;
+          verticalOffset = newSize.y * 1.5;
           
-          // Ensure camera is positioned properly behind the plane.
           updateCamera(0);
         },
         undefined,
@@ -207,20 +183,17 @@
       clock = new THREE.Clock();
       window.addEventListener("resize", onWindowResize);
       
-      // Set up camera drag events (for adjusting yaw offset).
       renderer.domElement.addEventListener("pointerdown", onCameraDragStart);
       renderer.domElement.addEventListener("pointermove", onCameraDragMove);
       renderer.domElement.addEventListener("pointerup", onCameraDragEnd);
       renderer.domElement.addEventListener("pointercancel", onCameraDragEnd);
       
-      // Set up joystick pointer events.
       joystickContainer.addEventListener("pointerdown", onJoystickStart);
       joystickContainer.addEventListener("pointermove", onJoystickMove);
       joystickContainer.addEventListener("pointerup", onJoystickEnd);
       joystickContainer.addEventListener("pointercancel", onJoystickEnd);
     }
     
-    // Create a simple house (a box plus a cone roof) scaled by the provided factor.
     function createHouse(x, z, scaleFactor=1) {
       const houseGroup = new THREE.Group();
       const bodyGeo = new THREE.BoxGeometry(10, 8, 10);
@@ -231,8 +204,8 @@
       const roofGeo = new THREE.ConeGeometry(6, 4, 4);
       const roofMat = new THREE.MeshPhongMaterial({ color: 0x808080 });
       const roofMesh = new THREE.Mesh(roofGeo, roofMat);
-      roofMesh.position.y = 8 + 2;
-      roofMesh.rotation.y = Math.PI / 4;
+      roofMesh.position.y = 10;
+      roofMesh.rotation.y = Math.PI/4;
       houseGroup.add(roofMesh);
       houseGroup.position.set(x, 0, z);
       houseGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
@@ -245,7 +218,6 @@
       renderer.setSize(window.innerWidth, window.innerHeight);
     }
     
-    // --- Camera drag events (to adjust camera yaw offset) ---
     function onCameraDragStart(event) {
       if (event.target.closest("#joystick-container") || event.target.closest("#throttleContainer")) return;
       isDraggingCamera = true;
@@ -261,7 +233,6 @@
       isDraggingCamera = false;
     }
     
-    // --- Joystick pointer events ---
     let joystickActive = false;
     let joystickCenter = { x: 0, y: 0 };
     function onJoystickStart(event) {
@@ -300,12 +271,15 @@
       joystickElem.style.transform = `translate(${moveX}px, ${moveY}px)`;
     }
     
-    // --- Update camera to trail behind the plane ---
+    // --- Updated updateCamera uses only yaw for trailing ---
     function updateCamera(delta) {
       if (!plane) return;
-      // Get the plane's forward vector (assuming nose faces -Z).
-      const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(plane.quaternion);
-      const tailVector = forward.clone().negate().normalize().multiplyScalar(trailingDistance);
+      // Extract yaw from the plane (ignoring pitch and roll).
+      const yaw = plane.rotation.y;
+      // Compute horizontal forward vector from yaw only.
+      const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+      // Calculate tail vector.
+      const tailVector = forward.clone().negate().multiplyScalar(trailingDistance);
       if (cameraYawOffset !== 0) {
         tailVector.applyAxisAngle(new THREE.Vector3(0,1,0), cameraYawOffset);
       }
@@ -318,36 +292,27 @@
       camera.lookAt(lookAtPoint);
     }
     
-    // --- Main animation loop (flight simulation) ---
     function animate() {
       requestAnimationFrame(animate);
       const delta = clock.getDelta();
       
       if (plane) {
         const throttleValue = parseFloat(throttleSlider.value);
-        // Move plane forward along its local -Z axis.
         const forwardVec = new THREE.Vector3(0, 0, -1).applyQuaternion(plane.quaternion).normalize();
         plane.position.add(forwardVec.multiplyScalar(throttleValue * speedFactor * delta));
-        // Simulate stall: if throttle is low, gravity pulls the plane down.
         if (throttleValue < 1) {
           plane.position.y -= gravity * (1 - throttleValue) * delta;
         }
-        // Prevent plane from sinking below ground level (y = 0.05).
         if (plane.position.y < 0.05) {
           plane.position.y = 0.05;
         }
         
-        // --- Update plane orientation using joystick input ---
-        // We'll use Euler angles to enforce a target bank (roll) when turning.
+        // Update plane orientation using Euler angles for proper banking.
         const currentEuler = new THREE.Euler().setFromQuaternion(plane.quaternion, 'YXZ');
-        // Update pitch: add incremental rotation from joystick.y.
         currentEuler.x += joystick.y * pitchFactor * delta;
-        // Update yaw: invert joystick.x so that pushing right yawes right.
         currentEuler.y -= joystick.x * yawFactor * delta;
-        // Update roll: smoothly move roll toward a target bank angle.
         const targetRoll = -joystick.x * maxBankAngle;
         currentEuler.z = THREE.MathUtils.lerp(currentEuler.z, targetRoll, 0.1);
-        // Set plane's new rotation.
         plane.quaternion.setFromEuler(currentEuler);
       }
       
