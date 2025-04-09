@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <!-- Prevent zooming and disable user scaling/touch callouts -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Flight Simulator – Final Version (Revised)</title>
+  <title>Flight Simulator – Final Version (Natural Environment)</title>
   <style>
     html, body {
       margin: 0;
@@ -20,8 +20,8 @@
       user-select: none;
     }
     canvas { display: block; }
-
-    /* HUD at top-left for altitude, speed */
+    
+    /* HUD: Altimeter & Speedometer in top-left */
     #hud {
       position: fixed;
       top: 20px;
@@ -33,8 +33,8 @@
       z-index: 30;
       font-size: 14px;
     }
-
-    /* Timer + high score at top-right */
+    
+    /* Timer & High Score in top-right */
     #timerDisplay, #highScoreDisplay {
       position: fixed;
       top: 20px;
@@ -48,11 +48,9 @@
       text-align: center;
       margin-bottom: 5px;
     }
-    #highScoreDisplay {
-      top: 70px;
-    }
-
-    /* Throttle slider container – placed bottom-right, no background. */
+    #highScoreDisplay { top: 70px; }
+    
+    /* Throttle slider container – bottom-right */
     #throttleContainer {
       position: fixed;
       bottom: 80px;
@@ -84,8 +82,8 @@
       border-radius: 50%;
       margin-top: -3px;
     }
-
-    /* Joystick container – bigger, red-tinted */
+    
+    /* Virtual joystick container – bottom-center */
     #joystick-container {
       position: fixed;
       bottom: 20px;
@@ -110,8 +108,8 @@
       position: relative;
       touch-action: none;
     }
-
-    /* Start screen overlay – center everything. */
+    
+    /* Start Screen Overlay – centered */
     #startScreen {
       position: fixed;
       top: 0; left: 0;
@@ -135,8 +133,8 @@
       font-size: 18px;
       cursor: pointer;
     }
-
-    /* Landing success pop-up */
+    
+    /* Landing Success Pop-up */
     #landingMessage {
       position: fixed;
       top: 50%;
@@ -145,11 +143,14 @@
       z-index: 50;
       font-size: 48px;
       color: yellow;
-      display: none;
+      background: rgba(0,0,0,0.8);
+      padding: 20px;
+      border-radius: 10px;
       text-align: center;
+      display: none;
     }
-
-    /* Objective banner at top center – shows at game start for 5s. */
+    
+    /* Objective Banner */
     #objectiveBanner {
       position: fixed;
       top: 0;
@@ -164,7 +165,7 @@
       display: none;
     }
   </style>
-
+  
   <!-- Import map for Three.js modules -->
   <script type="importmap">
     {
@@ -186,30 +187,30 @@
     <button id="startButton">Start Game</button>
   </div>
 
-  <!-- Objective Banner – show for 5 seconds after game starts. -->
+  <!-- Objective Banner -->
   <div id="objectiveBanner">Objective: Land on another runway!</div>
 
-  <!-- Timer + High Score in top right -->
+  <!-- Timer + High Score in top-right -->
   <div id="timerDisplay">Time: 0.0 s</div>
   <div id="highScoreDisplay">High Score: --</div>
 
-  <!-- HUD (altimeter & speedometer in top left) -->
+  <!-- HUD (altimeter & speedometer in top-left) -->
   <div id="hud">
     <div id="altimeter">Altitude: 0 m</div>
     <div id="speedometer">Speed: 0 km/h</div>
   </div>
 
-  <!-- Throttle slider in bottom right -->
+  <!-- Throttle Slider in bottom-right -->
   <div id="throttleContainer">
     <input type="range" id="throttle" min="0" max="5" step="0.1" value="0">
   </div>
 
-  <!-- Virtual Joystick -->
+  <!-- Virtual Joystick (bottom-center) -->
   <div id="joystick-container">
     <div id="joystick"></div>
   </div>
 
-  <!-- Landing success pop-up -->
+  <!-- Landing Success Pop-up -->
   <div id="landingMessage">Great Job!</div>
 
   <script type="module">
@@ -221,7 +222,7 @@
     document.addEventListener('cut', e => e.preventDefault());
     document.addEventListener('paste', e => e.preventDefault());
 
-    // Basic global variables for scene.
+    // Global variables.
     let scene, camera, renderer, plane, clock;
     let throttleSlider, joystickContainer, joystickElem;
 
@@ -237,10 +238,8 @@
     const joystick = { x: 0, y: 0 };
     let cameraYawOffset = 0, isDraggingCamera = false, dragStartX = 0;
 
-    // For collisions (buildings, trees, etc.).
+    // Arrays for collisions and runways.
     const obstacles = [];
-
-    // For runways and landing detection.
     const runways = [];
     let homeRunway = null;
     let runwayCounter = 2; // Home runway is ID 1
@@ -302,17 +301,13 @@
       // Create home runway (ID=1) at (0,1.2,-10).
       homeRunway = createRunway(new THREE.Vector3(0,1.2,-10), 1, true);
 
-      // Additional runways, now much further away (approximately 1200 m further down).
+      // Additional runways further away.
       createRunway(new THREE.Vector3(200,1.2,-1800), runwayCounter++);
       createRunway(new THREE.Vector3(-200,1.2,-1800), runwayCounter++);
-      // Fourth runway added.
       createRunway(new THREE.Vector3(0,1.2,-2500), runwayCounter++);
 
-      // Add environment.
-      spawnVillages(5);
-      spawnCity(15);
-      spawnDetailedCity();
-      spawnInfiniteLandscape();
+      // Replace random buildings with a natural environment.
+      spawnForestAndMountain();
 
       // Clouds.
       spawnClouds();
@@ -339,12 +334,11 @@
         "models/plane.glb",
         (gltf) => {
           plane = gltf.scene;
-          // Position plane on home runway.
+          // Spawn plane on home runway.
           plane.position.set(0,1.2,-10);
           plane.rotation.set(0,0,0);
           scene.add(plane);
 
-          // Scale plane.
           const box = new THREE.Box3().setFromObject(plane);
           const size = new THREE.Vector3();
           box.getSize(size);
@@ -352,7 +346,6 @@
           const scaleFactor = targetPlaneLength / currentLength;
           plane.scale.multiplyScalar(scaleFactor);
 
-          // Recompute trailing distance.
           const newBox = new THREE.Box3().setFromObject(plane);
           const newSize = new THREE.Vector3();
           newBox.getSize(newSize);
@@ -368,7 +361,6 @@
       clock = new THREE.Clock();
       window.addEventListener("resize", onWindowResize);
 
-      // Add camera + joystick event listeners.
       renderer.domElement.addEventListener("pointerdown", onCameraDragStart);
       renderer.domElement.addEventListener("pointermove", onCameraDragMove);
       renderer.domElement.addEventListener("pointerup", onCameraDragEnd);
@@ -381,8 +373,7 @@
     }
 
     /**
-     * Creates a runway, centered at 'position', with a given runwayID.
-     * If isHome is true, the runway is the home runway.
+     * Creates a runway with a given runwayID.
      */
     function createRunway(position, runwayID, isHome=false, heading=0) {
       const runwayWidth = targetPlaneLength * 2.5;
@@ -409,11 +400,10 @@
       const runwayMat = new THREE.MeshPhongMaterial({ map: runwayTexture });
       const runwayMesh = new THREE.Mesh(runwayGeo, runwayMat);
 
-      // Rotate so it lies flat (XZ plane), facing +Z if heading=0.
+      // Rotate so it lies flat.
       runwayMesh.rotation.x = -Math.PI/2;
       runwayMesh.rotation.y = heading;
 
-      // Position & user data.
       runwayMesh.position.copy(position);
       runwayMesh.userData.center = position.clone();
       runwayMesh.userData.width = runwayWidth;
@@ -423,107 +413,54 @@
       runwayMesh.userData.isHome = isHome;
 
       scene.add(runwayMesh);
-
-      // Store in runways array.
       runways.push(runwayMesh);
 
       return runwayMesh;
     }
 
-    // Environment spawners.
-    function spawnVillages(numPatches) {
-      for (let i = 0; i < numPatches; i++) {
-        let centerX = THREE.MathUtils.randFloatSpread(300);
-        let centerZ = THREE.MathUtils.randFloat(-400, -100);
-        let count = Math.floor(THREE.MathUtils.randFloat(5,10));
-        for (let j = 0; j < count; j++) {
-          let offsetX = THREE.MathUtils.randFloat(-20,20);
-          let offsetZ = THREE.MathUtils.randFloat(-20,20);
-          let scaleFactor = THREE.MathUtils.randFloat(0.5,1.0);
-          createHouse(centerX+offsetX, centerZ+offsetZ, scaleFactor);
-        }
+    // New environment spawner: replaces buildings with trees and adds a mountain.
+    function spawnForestAndMountain() {
+      // Spawn many pine trees.
+      for (let i = 0; i < 300; i++) {
+        let x = THREE.MathUtils.randFloatSpread(4000);
+        let z = THREE.MathUtils.randFloat(-4000, 4000);
+        createPineTree(x, z);
       }
-    }
-    function spawnCity(count) {
-      let cityCenterX = THREE.MathUtils.randFloat(-50,50);
-      let cityCenterZ = -800;
-      for (let i = 0; i < count; i++) {
-        let offsetX = THREE.MathUtils.randFloat(-100,100);
-        let offsetZ = THREE.MathUtils.randFloat(-50,50);
-        createSkyscraper(cityCenterX+offsetX, cityCenterZ+offsetZ);
-      }
-    }
-    function spawnDetailedCity() {
-      for (let i = 0; i < 50; i++) {
-        let x = THREE.MathUtils.randFloat(-150,150);
-        let z = THREE.MathUtils.randFloat(-1000, -600);
-        createSkyscraper(x, z, true);
-      }
-    }
-    function spawnInfiniteLandscape() {
-      for (let i = 0; i < 800; i++) {
-        let x, z;
-        do {
-          x = THREE.MathUtils.randFloatSpread(4000);
-          z = THREE.MathUtils.randFloat(-4000,4000);
-        } while (isOnHomeRunwayArea(x, z));
+      // Add additional common trees.
+      for (let i = 0; i < 200; i++) {
+        let x = THREE.MathUtils.randFloatSpread(4000);
+        let z = THREE.MathUtils.randFloat(-4000, 4000);
         createTree(x, z);
       }
-      for (let i = 0; i < 500; i++) {
-        let x = THREE.MathUtils.randFloatSpread(4000);
-        let z = THREE.MathUtils.randFloat(-4000,4000);
-        createGenericBuilding(x, z);
-      }
-    }
-    function isOnHomeRunwayArea(x, z) {
-      if (x > -15 && x < 15 && z < 10 && z > -210) return true;
-      return false;
+      // Create one large mountain in the far background.
+      // Position it far away and slightly centered.
+      createMountain(0, -6000, 1.5);
     }
 
-    // Basic environment items.
-    function createHouse(x, z, scaleFactor = 1) {
-      const houseGroup = new THREE.Group();
-      const bodyGeo = new THREE.BoxGeometry(10, 8, 10);
-      const bodyMat = new THREE.MeshPhongMaterial({ color: 0x8B4513 });
-      const bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
-      bodyMesh.position.y = 4;
-      houseGroup.add(bodyMesh);
-      const roofGeo = new THREE.ConeGeometry(6, 4, 4);
-      const roofMat = new THREE.MeshPhongMaterial({ color: 0x808080 });
-      const roofMesh = new THREE.Mesh(roofGeo, roofMat);
-      roofMesh.position.y = 10;
-      roofMesh.rotation.y = Math.PI/4;
-      houseGroup.add(roofMesh);
-      houseGroup.position.set(x, 0, z);
-      houseGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
-      scene.add(houseGroup);
-      houseGroup.userData.boundingBox = new THREE.Box3().setFromObject(houseGroup);
-      obstacles.push(houseGroup);
+    // Create a pine tree (tall cone-like tree).
+    function createPineTree(x, z) {
+      const treeGroup = new THREE.Group();
+      // Trunk.
+      const trunkHeight = 20;
+      const trunkRadius = 2;
+      const trunkGeo = new THREE.CylinderGeometry(trunkRadius, trunkRadius, trunkHeight, 8);
+      const trunkMat = new THREE.MeshPhongMaterial({ color: 0x8B4513 });
+      const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+      trunk.position.y = trunkHeight / 2;
+      treeGroup.add(trunk);
+      // Conical crown.
+      const crownHeight = 40;
+      const crownRadius = 10;
+      const crownGeo = new THREE.ConeGeometry(crownRadius, crownHeight, 16);
+      const crownMat = new THREE.MeshPhongMaterial({ color: 0x006400 });
+      const crown = new THREE.Mesh(crownGeo, crownMat);
+      crown.position.y = trunkHeight + crownHeight / 2;
+      treeGroup.add(crown);
+      treeGroup.position.set(x, 0, z);
+      scene.add(treeGroup);
     }
-    function createSkyscraper(x, z, detailed = false) {
-      const height = THREE.MathUtils.randFloat(30, detailed ? 100 : 60);
-      const geo = new THREE.BoxGeometry(20, height, 20);
-      const mat = new THREE.MeshPhongMaterial({ color: detailed ? 0x666666 : 0x999999 });
-      const building = new THREE.Mesh(geo, mat);
-      building.position.y = height / 2;
-      building.position.set(x, 0, z);
-      scene.add(building);
-      building.userData.boundingBox = new THREE.Box3().setFromObject(building);
-      obstacles.push(building);
-    }
-    function createGenericBuilding(x, z) {
-      const width = THREE.MathUtils.randFloat(10, 30);
-      const depth = THREE.MathUtils.randFloat(10, 30);
-      const height = THREE.MathUtils.randFloat(20, 80);
-      const geo = new THREE.BoxGeometry(width, height, depth);
-      const mat = new THREE.MeshPhongMaterial({ color: Math.random() * 0xffffff });
-      const building = new THREE.Mesh(geo, mat);
-      building.position.y = height / 2;
-      building.position.set(x, 0, z);
-      scene.add(building);
-      building.userData.boundingBox = new THREE.Box3().setFromObject(building);
-      obstacles.push(building);
-    }
+
+    // Create a simple tree.
     function createTree(x, z) {
       const treeGroup = new THREE.Group();
       const trunkHeight = THREE.MathUtils.randFloat(1.5, 3);
@@ -543,36 +480,23 @@
       scene.add(treeGroup);
     }
 
-    // Clouds.
-    function spawnClouds() {
-      for (let i = 0; i < 120; i++) {
-        const cloud = createCloud(THREE.MathUtils.randFloat(300, 1000));
-        scene.add(cloud);
-      }
-    }
-    function spawnHighClouds() {
-      for (let i = 0; i < 120; i++) {
-        const cloud = createCloud(THREE.MathUtils.randFloat(6000, 6100));
-        scene.add(cloud);
-      }
-    }
-    function createCloud(yPos) {
-      const cloudGroup = new THREE.Group();
-      const material = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 });
-      const sphere1 = new THREE.Mesh(new THREE.SphereGeometry(15, 16, 16), material);
-      cloudGroup.add(sphere1);
-      const sphere2 = new THREE.Mesh(new THREE.SphereGeometry(10, 16, 16), material);
-      sphere2.position.set(12, 0, 0);
-      cloudGroup.add(sphere2);
-      const sphere3 = new THREE.Mesh(new THREE.SphereGeometry(8, 16, 16), material);
-      sphere3.position.set(-10, 3, 0);
-      cloudGroup.add(sphere3);
-      cloudGroup.position.set(
-        THREE.MathUtils.randFloatSpread(2000),
-        yPos,
-        THREE.MathUtils.randFloatSpread(2000)
-      );
-      return cloudGroup;
+    // Create a mountain with a white snow cap.
+    function createMountain(x, z, scale) {
+      const mountainHeight = 300 * scale;
+      const mountainRadius = 150 * scale;
+      const mountainGeo = new THREE.ConeGeometry(mountainRadius, mountainHeight, 32);
+      const mountainMat = new THREE.MeshPhongMaterial({ color: 0x2E8B57 });
+      const mountain = new THREE.Mesh(mountainGeo, mountainMat);
+      mountain.position.set(x, mountainHeight / 2, z);
+      // Snow cap.
+      const capHeight = 60 * scale;
+      const capRadius = mountainRadius * 0.5;
+      const capGeo = new THREE.ConeGeometry(capRadius, capHeight, 32);
+      const capMat = new THREE.MeshPhongMaterial({ color: 0xffffff });
+      const cap = new THREE.Mesh(capGeo, capMat);
+      cap.position.y = mountainHeight - capHeight / 2;
+      mountain.add(cap);
+      scene.add(mountain);
     }
 
     function onWindowResize() {
@@ -608,7 +532,7 @@
     function onJoystickStart(event) {
       joystickActive = true;
       const rect = joystickContainer.getBoundingClientRect();
-      joystickCenter = { x: rect.left + rect.width/2, y: rect.top + rect.height/2 };
+      joystickCenter = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
       updateJoystick(event);
     }
     function onJoystickMove(event) {
@@ -632,13 +556,13 @@
       }
       const dx = clientX - joystickCenter.x;
       const dy = clientY - joystickCenter.y;
-      const maxDist = joystickContainer.clientWidth/2;
-      joystick.x = Math.max(-1, Math.min(1, dx/maxDist));
-      joystick.y = Math.max(-1, Math.min(1, dy/maxDist));
-      const thumbMax = maxDist - (joystickElem.clientWidth/2);
+      const maxDist = joystickContainer.clientWidth / 2;
+      joystick.x = Math.max(-1, Math.min(1, dx / maxDist));
+      joystick.y = Math.max(-1, Math.min(1, dy / maxDist));
+      const thumbMax = maxDist - (joystickElem.clientWidth / 2);
       const moveX = Math.max(-thumbMax, Math.min(thumbMax, dx));
       const moveY = Math.max(-thumbMax, Math.min(thumbMax, dy));
-      joystickElem.style.transform = `translate(${moveX}px,${moveY}px)`;
+      joystickElem.style.transform = `translate(${moveX}px, ${moveY}px)`;
     }
 
     // Camera trailing.
@@ -664,7 +588,7 @@
     // Timer update.
     function updateTimerDisplay() {
       const currentTime = performance.now();
-      const elapsed = ((currentTime - flightStartTime)/1000).toFixed(1);
+      const elapsed = ((currentTime - flightStartTime) / 1000).toFixed(1);
       timerDisplay.innerHTML = `Time: ${elapsed} s`;
       if (highScore < Infinity) {
         highScoreDisplay.innerHTML = `High Score: ${highScore} s`;
@@ -688,15 +612,13 @@
     }
 
     /**
-     * Checks whether the plane is on any non-home runway (throttle=0, altitude low).
+     * Checks whether the plane is on any non-home runway (throttle=0, altitude near ground).
      */
     function checkLanding() {
       if (!plane) return;
       const throttleValue = parseFloat(throttleSlider.value);
       if (throttleValue !== 0) return;
       if (plane.position.y > 1.4) return;
-
-      // Check plane's position against each runway's local zone.
       for (const runway of runways) {
         if (runway.userData.isHome) continue;
         if (isPlaneOnRunwayZone(plane.position, runway)) {
@@ -710,7 +632,7 @@
     }
 
     /**
-     * Returns true if planePos is within the rectangle of runway (in runway local coordinates).
+     * Returns true if planePos is inside the runway zone.
      */
     function isPlaneOnRunwayZone(planePos, runway) {
       let dx = planePos.x - runway.userData.center.x;
@@ -727,7 +649,7 @@
 
     function handleLandingSuccess(runwayID) {
       const currentTime = performance.now();
-      const landingTime = ((currentTime - flightStartTime)/1000).toFixed(1);
+      const landingTime = ((currentTime - flightStartTime) / 1000).toFixed(1);
       const landingTimeNum = parseFloat(landingTime);
       if (landingTimeNum < highScore) {
         highScore = landingTimeNum;
@@ -747,7 +669,6 @@
     function animate() {
       requestAnimationFrame(animate);
       const delta = clock.getDelta();
-
       if (plane) {
         prevPlanePosition.copy(plane.position);
         const currentEuler = new THREE.Euler().setFromQuaternion(plane.quaternion, "YXZ");
@@ -756,7 +677,6 @@
         const targetRoll = -joystick.x * maxBankAngle;
         currentEuler.z = THREE.MathUtils.lerp(currentEuler.z, targetRoll, rollLerpFactor);
         plane.quaternion.setFromEuler(currentEuler);
-
         const throttleValue = parseFloat(throttleSlider.value);
         const forwardVec = new THREE.Vector3(0, 0, -1).applyQuaternion(plane.quaternion).normalize();
         plane.position.add(forwardVec.multiplyScalar(throttleValue * speedFactor * delta));
@@ -769,14 +689,12 @@
         const speedKmh = throttleValue * speedFactor * 3.6;
         hudAltimeter.innerHTML = `Altitude: ${plane.position.y.toFixed(1)} m`;
         hudSpeedometer.innerHTML = `Speed: ${speedKmh.toFixed(1)} km/h`;
-
         checkCollisions();
         checkLanding();
         if (plane.position.y > 6000) {
           spawnHighClouds();
         }
       }
-
       updateCamera(delta);
       updateTimerDisplay();
       renderer.render(scene, camera);
@@ -791,6 +709,101 @@
     }
 
     document.getElementById("startButton").addEventListener("click", startGame);
+
+    //////////////////////////
+    // New Natural Environment
+    //////////////////////////
+
+    // Spawn a forest of trees and a single mountain.
+    function spawnForestAndMountain() {
+      // Spawn many pine trees.
+      for (let i = 0; i < 300; i++) {
+        let x = THREE.MathUtils.randFloatSpread(4000);
+        let z = THREE.MathUtils.randFloat(-4000, 4000);
+        createPineTree(x, z);
+      }
+      // Spawn additional generic trees.
+      for (let i = 0; i < 200; i++) {
+        let x = THREE.MathUtils.randFloatSpread(4000);
+        let z = THREE.MathUtils.randFloat(-4000, 4000);
+        createTree(x, z);
+      }
+      // Create one large mountain in the far background.
+      createMountain(0, -6000, 1.5);
+    }
+
+    // Create a tall pine tree.
+    function createPineTree(x, z) {
+      const treeGroup = new THREE.Group();
+      // Trunk.
+      const trunkHeight = 20;
+      const trunkRadius = 2;
+      const trunkGeo = new THREE.CylinderGeometry(trunkRadius, trunkRadius, trunkHeight, 8);
+      const trunkMat = new THREE.MeshPhongMaterial({ color: 0x8B4513 });
+      const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+      trunk.position.y = trunkHeight / 2;
+      treeGroup.add(trunk);
+      // Conical crown.
+      const crownHeight = 40;
+      const crownRadius = 10;
+      const crownGeo = new THREE.ConeGeometry(crownRadius, crownHeight, 16);
+      const crownMat = new THREE.MeshPhongMaterial({ color: 0x006400 });
+      const crown = new THREE.Mesh(crownGeo, crownMat);
+      crown.position.y = trunkHeight + crownHeight / 2;
+      treeGroup.add(crown);
+      treeGroup.position.set(x, 0, z);
+      scene.add(treeGroup);
+    }
+
+    // (Keep existing createTree for generic trees.)
+    function createTree(x, z) {
+      const treeGroup = new THREE.Group();
+      const trunkHeight = THREE.MathUtils.randFloat(1.5, 3);
+      const trunkRadius = THREE.MathUtils.randFloat(0.2, 0.5);
+      const trunkGeo = new THREE.CylinderGeometry(trunkRadius, trunkRadius, trunkHeight, 8);
+      const trunkMat = new THREE.MeshPhongMaterial({ color: 0x8B4513 });
+      const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+      trunk.position.y = trunkHeight / 2;
+      treeGroup.add(trunk);
+      const crownRadius = THREE.MathUtils.randFloat(1, 2);
+      const crownGeo = new THREE.SphereGeometry(crownRadius, 8, 8);
+      const crownMat = new THREE.MeshPhongMaterial({ color: 0x2E8B57 });
+      const crown = new THREE.Mesh(crownGeo, crownMat);
+      crown.position.y = trunkHeight + crownRadius * 0.8;
+      treeGroup.add(crown);
+      treeGroup.position.set(x, 0, z);
+      scene.add(treeGroup);
+    }
+
+    // Create a mountain with a snow cap.
+    function createMountain(x, z, scale) {
+      const mountainHeight = 300 * scale;
+      const mountainRadius = 150 * scale;
+      const mountainGeo = new THREE.ConeGeometry(mountainRadius, mountainHeight, 32);
+      const mountainMat = new THREE.MeshPhongMaterial({ color: 0x2E8B57 });
+      const mountain = new THREE.Mesh(mountainGeo, mountainMat);
+      mountain.position.set(x, mountainHeight / 2, z);
+      // Snow cap.
+      const capHeight = 60 * scale;
+      const capRadius = mountainRadius * 0.5;
+      const capGeo = new THREE.ConeGeometry(capRadius, capHeight, 32);
+      const capMat = new THREE.MeshPhongMaterial({ color: 0xffffff });
+      const cap = new THREE.Mesh(capGeo, capMat);
+      cap.position.y = mountainHeight - capHeight / 2;
+      mountain.add(cap);
+      scene.add(mountain);
+    }
+
+    // Override the previous environment spawners with the new one.
+    (function overrideEnv() {
+      const oldInit = init;
+      init = function() {
+        oldInit();
+        // Instead of spawning villages and buildings, spawn only forest and mountain.
+        spawnForestAndMountain();
+      }
+    })();
+    
   </script>
 </body>
 </html>
