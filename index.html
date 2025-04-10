@@ -50,7 +50,7 @@
     }
     #highScoreDisplay { top: 70px; }
 
-    /* Throttle slider container – bottom-right */
+    /* Throttle slider container – positioned in bottom-right */
     #throttleContainer {
       position: fixed;
       bottom: 80px;
@@ -112,10 +112,8 @@
     /* Start screen overlay – centered */
     #startScreen {
       position: fixed;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
+      top: 0; left: 0;
+      width: 100vw; height: 100vh;
       background: rgba(0,0,0,0.85);
       color: #fff;
       z-index: 100;
@@ -179,6 +177,7 @@
   </script>
 </head>
 <body oncopy="return false;" onpaste="return false;" oncut="return false;">
+
   <!-- Start Screen Overlay -->
   <div id="startScreen">
     <h1>Flight Simulator</h1>
@@ -302,11 +301,11 @@
       homeRunway = createRunway(new THREE.Vector3(0, 1.2, -10), 1, true);
 
       // Additional runways:
-      // Mountain runway – placed on a mountain.
+      // Mountain runway (placed on a mountain).
       createRunway(new THREE.Vector3(-300, 50, -1800), runwayCounter++);
-      // Valley runway – placed in a deep valley.
+      // Valley runway (placed in a deep valley).
       createRunway(new THREE.Vector3(300, -10, -1800), runwayCounter++);
-      // Fourth runway – normal placement.
+      // Fourth runway (normal placement).
       createRunway(new THREE.Vector3(0, 1.2, -2500), runwayCounter++);
 
       // Spawn brown houses.
@@ -318,7 +317,7 @@
       // Spawn tall pine trees along the map's edge.
       spawnTallPineTrees(100);
 
-      // Scatter the uploaded tree2.glb models around the map.
+      // Scatter tree2.glb models around the map.
       spawnTree2Models(50);
 
       // Clouds.
@@ -346,7 +345,6 @@
         "models/plane.glb",
         (gltf) => {
           plane = gltf.scene;
-          // Position plane on home runway.
           plane.position.set(0, 1.2, -10);
           plane.rotation.set(0, 0, 0);
           scene.add(plane);
@@ -370,7 +368,7 @@
       clock = new THREE.Clock();
       window.addEventListener("resize", onWindowResize);
 
-      // Camera and joystick event listeners.
+      // Add camera and joystick event listeners.
       renderer.domElement.addEventListener("pointerdown", onCameraDragStart);
       renderer.domElement.addEventListener("pointermove", onCameraDragMove);
       renderer.domElement.addEventListener("pointerup", onCameraDragEnd);
@@ -391,7 +389,6 @@
       const runwayWidth = targetPlaneLength * 2.5;
       const runwayLength = targetPlaneLength * 25;
       const runwayGeo = new THREE.PlaneGeometry(runwayWidth, runwayLength);
-      // Create a simple runway texture with dashed center lines.
       const runwayCanvas = document.createElement("canvas");
       runwayCanvas.width = 64;
       runwayCanvas.height = 256;
@@ -559,7 +556,7 @@
       scene.add(treeGroup);
     }
 
-    // New spawner for tall pine trees.
+    // Spawner for tall pine trees.
     function spawnTallPineTrees(num) {
       for (let i = 0; i < num; i++) {
         let x = THREE.MathUtils.randFloatSpread(4000);
@@ -568,7 +565,6 @@
         createTallTree(x, z);
       }
     }
-    // Check if a position is near any runway.
     function isNearAnyRunway(x, z) {
       for (let i = 0; i < runways.length; i++) {
         let center = runways[i].userData.center;
@@ -587,7 +583,6 @@
         for (let i = 0; i < num; i++) {
           let x = THREE.MathUtils.randFloatSpread(4000);
           let z = THREE.MathUtils.randFloat(-4000, 4000);
-          // Avoid area near home runway or any runway.
           if (isOnHomeRunwayArea(x, z) || isNearAnyRunway(x, z)) continue;
           let treeClone = baseTree.clone();
           let scale = THREE.MathUtils.randFloat(2, 5);
@@ -842,8 +837,11 @@
       init();
       animate();
     }
-
-    document.getElementById("startButton").addEventListener("click", startGame);
+    
+    // Wait for the DOM to load, then add the start button listener.
+    window.addEventListener("DOMContentLoaded", () => {
+      document.getElementById("startButton").addEventListener("click", startGame);
+    });
   </script>
 </body>
 </html>
