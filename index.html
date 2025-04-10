@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <!-- Prevent zooming and disable user scaling/touch callouts -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Flight Simulator – Final Version (Landscape & Runways Revised)</title>
+  <title>Flight Simulator – Final Version (Landscape & Airports Revised with Tree2)</title>
   <style>
     html, body {
       margin: 0;
@@ -21,7 +21,7 @@
     }
     canvas { display: block; }
 
-    /* HUD at top-left for altitude and speed */
+    /* HUD in top-left for altitude and speed */
     #hud {
       position: fixed;
       top: 20px;
@@ -34,7 +34,7 @@
       font-size: 14px;
     }
 
-    /* Timer + high score in top-right */
+    /* Timer and high score in top-right */
     #timerDisplay, #highScoreDisplay {
       position: fixed;
       top: 20px;
@@ -48,11 +48,9 @@
       text-align: center;
       margin-bottom: 5px;
     }
-    #highScoreDisplay {
-      top: 70px;
-    }
+    #highScoreDisplay { top: 70px; }
 
-    /* Throttle slider container – placed bottom-right */
+    /* Throttle slider container – bottom-right */
     #throttleContainer {
       position: fixed;
       bottom: 80px;
@@ -114,8 +112,10 @@
     /* Start screen overlay – centered */
     #startScreen {
       position: fixed;
-      top: 0; left: 0;
-      width: 100vw; height: 100vh;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
       background: rgba(0,0,0,0.85);
       color: #fff;
       z-index: 100;
@@ -152,7 +152,7 @@
       display: none;
     }
 
-    /* Objective banner at top center – shows for 5s at game start */
+    /* Objective banner at top center – shows for 5 seconds at start */
     #objectiveBanner {
       position: fixed;
       top: 0;
@@ -167,7 +167,7 @@
       display: none;
     }
   </style>
-
+  
   <!-- Import map for Three.js modules -->
   <script type="importmap">
     {
@@ -179,7 +179,6 @@
   </script>
 </head>
 <body oncopy="return false;" onpaste="return false;" oncut="return false;">
-
   <!-- Start Screen Overlay -->
   <div id="startScreen">
     <h1>Flight Simulator</h1>
@@ -299,25 +298,28 @@
       directionalLight.position.set(100, 150, 100);
       scene.add(directionalLight);
 
-      // Create home runway (ID=1) at (0,1.2,-10).
+      // Create home runway (ID=1) at (0, 1.2, -10).
       homeRunway = createRunway(new THREE.Vector3(0, 1.2, -10), 1, true);
 
       // Additional runways:
-      // Mountain runway: placed on a mountain (higher Y and shifted left).
+      // Mountain runway – placed on a mountain.
       createRunway(new THREE.Vector3(-300, 50, -1800), runwayCounter++);
-      // Valley runway: placed in a deep valley (lower Y and shifted right).
+      // Valley runway – placed in a deep valley.
       createRunway(new THREE.Vector3(300, -10, -1800), runwayCounter++);
-      // Fourth runway: normal placement.
+      // Fourth runway – normal placement.
       createRunway(new THREE.Vector3(0, 1.2, -2500), runwayCounter++);
 
       // Spawn brown houses.
       spawnVillages(5);
 
-      // Spawn trees.
+      // Spawn generic trees.
       spawnInfiniteLandscape();
 
-      // Spawn tall pine trees along the map's edge (avoid runways).
+      // Spawn tall pine trees along the map's edge.
       spawnTallPineTrees(100);
+
+      // Scatter the uploaded tree2.glb models around the map.
+      spawnTree2Models(50);
 
       // Clouds.
       spawnClouds();
@@ -344,6 +346,7 @@
         "models/plane.glb",
         (gltf) => {
           plane = gltf.scene;
+          // Position plane on home runway.
           plane.position.set(0, 1.2, -10);
           plane.rotation.set(0, 0, 0);
           scene.add(plane);
@@ -367,7 +370,7 @@
       clock = new THREE.Clock();
       window.addEventListener("resize", onWindowResize);
 
-      // Add camera and joystick event listeners.
+      // Camera and joystick event listeners.
       renderer.domElement.addEventListener("pointerdown", onCameraDragStart);
       renderer.domElement.addEventListener("pointermove", onCameraDragMove);
       renderer.domElement.addEventListener("pointerup", onCameraDragEnd);
@@ -381,8 +384,8 @@
 
     /**
      * Creates a runway, centered at 'position', with a given runwayID.
-     * If isHome is true, the runway is marked as the home runway.
-     * Also adds an airport control tower and building.
+     * If isHome is true, marks the runway as the home runway.
+     * Also adds a control tower and an airport building.
      */
     function createRunway(position, runwayID, isHome = false, heading = 0) {
       const runwayWidth = targetPlaneLength * 2.5;
@@ -463,7 +466,7 @@
       scene.add(building);
     }
 
-    // Environment spawners.
+    // Environment spawner: Brown houses.
     function spawnVillages(numPatches) {
       for (let i = 0; i < numPatches; i++) {
         let centerX = THREE.MathUtils.randFloatSpread(300);
@@ -477,8 +480,9 @@
         }
       }
     }
+
+    // Environment spawner: Generic trees only.
     function spawnInfiniteLandscape() {
-      // Spawn generic trees.
       for (let i = 0; i < 800; i++) {
         let x, z;
         do {
@@ -493,7 +497,7 @@
       return false;
     }
 
-    // Basic environment items.
+    // Basic environment item: Brown house.
     function createHouse(x, z, scaleFactor = 1) {
       const houseGroup = new THREE.Group();
       const bodyGeo = new THREE.BoxGeometry(10, 8, 10);
@@ -513,6 +517,8 @@
       houseGroup.userData.boundingBox = new THREE.Box3().setFromObject(houseGroup);
       obstacles.push(houseGroup);
     }
+
+    // Basic environment item: Generic tree.
     function createTree(x, z) {
       const treeGroup = new THREE.Group();
       const trunkHeight = THREE.MathUtils.randFloat(1.5, 3);
@@ -532,7 +538,7 @@
       scene.add(treeGroup);
     }
 
-    // New: Create a tall (pine) tree.
+    // New: Create a tall pine tree.
     function createTallTree(x, z) {
       const treeGroup = new THREE.Group();
       const trunkHeight = THREE.MathUtils.randFloat(20, 30);
@@ -562,16 +568,37 @@
         createTallTree(x, z);
       }
     }
+    // Check if a position is near any runway.
     function isNearAnyRunway(x, z) {
       for (let i = 0; i < runways.length; i++) {
         let center = runways[i].userData.center;
         let dx = x - center.x;
         let dz = z - center.z;
-        let distance = Math.sqrt(dx * dx + dz * dz);
-        if (distance < 200) {
-          return true;
-        }
+        if (Math.sqrt(dx * dx + dz * dz) < 200) return true;
       }
+      return false;
+    }
+
+    // New: Scatter the "tree2.glb" model around the map.
+    function spawnTree2Models(num) {
+      const loader = new GLTFLoader();
+      loader.load("models/tree2.glb", (gltf) => {
+        const baseTree = gltf.scene;
+        for (let i = 0; i < num; i++) {
+          let x = THREE.MathUtils.randFloatSpread(4000);
+          let z = THREE.MathUtils.randFloat(-4000, 4000);
+          // Avoid area near home runway or any runway.
+          if (isOnHomeRunwayArea(x, z) || isNearAnyRunway(x, z)) continue;
+          let treeClone = baseTree.clone();
+          let scale = THREE.MathUtils.randFloat(2, 5);
+          treeClone.scale.set(scale, scale, scale);
+          treeClone.position.set(x, 0, z);
+          scene.add(treeClone);
+        }
+      });
+    }
+    function isOnHomeRunwayArea(x, z) {
+      if (x > -15 && x < 15 && z < 10 && z > -210) return true;
       return false;
     }
 
