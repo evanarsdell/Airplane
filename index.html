@@ -177,7 +177,6 @@
   </script>
 </head>
 <body oncopy="return false;" onpaste="return false;" oncut="return false;">
-
   <!-- Start Screen Overlay -->
   <div id="startScreen">
     <h1>Flight Simulator</h1>
@@ -297,22 +296,28 @@
       directionalLight.position.set(100, 150, 100);
       scene.add(directionalLight);
 
-      // Create home runway (ID=1) at (0,1.2,-10).
+      // Create home runway (ID=1) at (0, 1.2, -10).
       homeRunway = createRunway(new THREE.Vector3(0, 1.2, -10), 1, true);
 
-      // Additional runways placed further away.
-      createRunway(new THREE.Vector3(200, 1.2, -1800), runwayCounter++);
-      createRunway(new THREE.Vector3(-200, 1.2, -1800), runwayCounter++);
+      // Additional runways:
+      // Mountain runway – placed on a mountain.
+      createRunway(new THREE.Vector3(-300, 50, -1800), runwayCounter++);
+      // Valley runway – placed in a deep valley.
+      createRunway(new THREE.Vector3(300, -10, -1800), runwayCounter++);
+      // Fourth runway – normal placement.
       createRunway(new THREE.Vector3(0, 1.2, -2500), runwayCounter++);
 
       // Spawn brown houses.
       spawnVillages(5);
 
-      // Spawn trees (only trees, not random cubes).
+      // Spawn generic trees.
       spawnInfiniteLandscape();
 
-      // Spawn tall pine trees to cover the edges of the map.
+      // Spawn tall pine trees along the map's edge.
       spawnTallPineTrees(100);
+
+      // Scatter the tree2.glb models around the map.
+      spawnTree2Models(50);
 
       // Clouds.
       spawnClouds();
@@ -339,7 +344,7 @@
         "models/plane.glb",
         (gltf) => {
           plane = gltf.scene;
-          // Spawn on home runway.
+          // Spawn the plane on the home runway.
           plane.position.set(0, 1.2, -10);
           plane.rotation.set(0, 0, 0);
           scene.add(plane);
@@ -376,15 +381,15 @@
     }
 
     /**
-     * Creates a runway with a given runwayID.
-     * Also adds a control tower and an airport building to this runway.
+     * Creates a runway, centered at 'position', with a given runwayID.
+     * If isHome is true, marks the runway as the home runway.
+     * Also adds a control tower and an airport building.
      */
     function createRunway(position, runwayID, isHome = false, heading = 0) {
       const runwayWidth = targetPlaneLength * 2.5;
       const runwayLength = targetPlaneLength * 25;
       const runwayGeo = new THREE.PlaneGeometry(runwayWidth, runwayLength);
-
-      // Create runway texture with dashed center lines.
+      // Create a simple runway texture with dashed center lines.
       const runwayCanvas = document.createElement("canvas");
       runwayCanvas.width = 64;
       runwayCanvas.height = 256;
@@ -400,7 +405,6 @@
       runwayTexture.wrapS = THREE.RepeatWrapping;
       runwayTexture.wrapT = THREE.RepeatWrapping;
       runwayTexture.repeat.set(1, runwayLength / 64);
-
       const runwayMat = new THREE.MeshPhongMaterial({ map: runwayTexture });
       const runwayMesh = new THREE.Mesh(runwayGeo, runwayMat);
       runwayMesh.rotation.x = -Math.PI / 2;
@@ -414,39 +418,30 @@
       runwayMesh.userData.isHome = isHome;
       scene.add(runwayMesh);
       runways.push(runwayMesh);
-
-      // Add a control tower and an airport building to this runway.
+      // Add airport structures.
       createControlTower(runwayMesh);
       createAirportBuilding(runwayMesh);
-
       return runwayMesh;
     }
 
-    // Creates a control tower for a runway.
+    // Creates a control tower positioned in front of the runway.
     function createControlTower(runway) {
-      // Place the tower at the front of the runway.
       let offsetDistance = runway.userData.length / 2 + 20;
       let heading = runway.userData.heading;
-      // Local offset vector (pointing toward the front).
       let offset = new THREE.Vector3(0, 0, offsetDistance);
       offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), heading);
       let towerPosition = runway.userData.center.clone().add(offset);
-      towerPosition.y += 15; // elevate tower
-
-      // Tower trunk.
+      towerPosition.y += 15;
       let trunkHeight = 30;
       let trunkRadius = 2;
       const trunkGeo = new THREE.CylinderGeometry(trunkRadius, trunkRadius, trunkHeight, 16);
       const trunkMat = new THREE.MeshPhongMaterial({ color: 0x555555 });
       const trunk = new THREE.Mesh(trunkGeo, trunkMat);
       trunk.position.y = trunkHeight / 2;
-
-      // Tower top (a small box).
       const topGeo = new THREE.BoxGeometry(6, 4, 6);
       const topMat = new THREE.MeshPhongMaterial({ color: 0x777777 });
       const top = new THREE.Mesh(topGeo, topMat);
-      top.position.y = trunkHeight + 2; // sits atop the trunk
-
+      top.position.y = trunkHeight + 2;
       const towerGroup = new THREE.Group();
       towerGroup.add(trunk);
       towerGroup.add(top);
@@ -454,16 +449,14 @@
       scene.add(towerGroup);
     }
 
-    // Creates an airport building for a runway.
+    // Creates an airport building placed to the side of the runway.
     function createAirportBuilding(runway) {
-      // Place the building to the side of the runway.
       let offsetDistance = runway.userData.width / 2 + 20;
       let heading = runway.userData.heading;
       let offset = new THREE.Vector3(offsetDistance, 0, 0);
       offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), heading);
       let buildingPos = runway.userData.center.clone().add(offset);
-      buildingPos.y += 7.5; // half the building height
-
+      buildingPos.y += 7.5;
       const buildingGeo = new THREE.BoxGeometry(30, 15, 30);
       const buildingMat = new THREE.MeshPhongMaterial({ color: 0x8B4513 });
       const building = new THREE.Mesh(buildingGeo, buildingMat);
@@ -471,7 +464,7 @@
       scene.add(building);
     }
 
-    // Environment spawners.
+    // Environment spawner: Brown houses.
     function spawnVillages(numPatches) {
       for (let i = 0; i < numPatches; i++) {
         let centerX = THREE.MathUtils.randFloatSpread(300);
@@ -485,8 +478,9 @@
         }
       }
     }
+
+    // Environment spawner: Generic trees.
     function spawnInfiniteLandscape() {
-      // Spawn generic trees.
       for (let i = 0; i < 800; i++) {
         let x, z;
         do {
@@ -501,7 +495,7 @@
       return false;
     }
 
-    // Basic environment items.
+    // Basic environment item: Brown house.
     function createHouse(x, z, scaleFactor = 1) {
       const houseGroup = new THREE.Group();
       const bodyGeo = new THREE.BoxGeometry(10, 8, 10);
@@ -521,6 +515,8 @@
       houseGroup.userData.boundingBox = new THREE.Box3().setFromObject(houseGroup);
       obstacles.push(houseGroup);
     }
+
+    // Basic environment item: Generic tree.
     function createTree(x, z) {
       const treeGroup = new THREE.Group();
       const trunkHeight = THREE.MathUtils.randFloat(1.5, 3);
@@ -540,10 +536,9 @@
       scene.add(treeGroup);
     }
 
-    // New: Create a tall (pine) tree.
+    // New: Create a tall pine tree.
     function createTallTree(x, z) {
       const treeGroup = new THREE.Group();
-      // Tall trunk.
       const trunkHeight = THREE.MathUtils.randFloat(20, 30);
       const trunkRadius = THREE.MathUtils.randFloat(1, 2);
       const trunkGeo = new THREE.CylinderGeometry(trunkRadius, trunkRadius, trunkHeight, 16);
@@ -551,7 +546,6 @@
       const trunk = new THREE.Mesh(trunkGeo, trunkMat);
       trunk.position.y = trunkHeight / 2;
       treeGroup.add(trunk);
-      // Conical crown.
       const crownHeight = THREE.MathUtils.randFloat(12, 15);
       const crownRadius = THREE.MathUtils.randFloat(8, 10);
       const crownGeo = new THREE.ConeGeometry(crownRadius, crownHeight, 16);
@@ -572,17 +566,37 @@
         createTallTree(x, z);
       }
     }
-    // Check if (x,z) is near any runway (avoid a margin of 200 units).
+    // Check if (x, z) is near any runway (avoid a margin of 200 units).
     function isNearAnyRunway(x, z) {
       for (let i = 0; i < runways.length; i++) {
         let center = runways[i].userData.center;
         let dx = x - center.x;
         let dz = z - center.z;
-        let distance = Math.sqrt(dx * dx + dz * dz);
-        if (distance < 200) {
-          return true;
-        }
+        if (Math.sqrt(dx * dx + dz * dz) < 200) return true;
       }
+      return false;
+    }
+
+    // New: Scatter the "tree2.glb" model around the map.
+    function spawnTree2Models(num) {
+      const loader = new GLTFLoader();
+      loader.load("models/tree2.glb", (gltf) => {
+        const baseTree = gltf.scene;
+        for (let i = 0; i < num; i++) {
+          let x = THREE.MathUtils.randFloatSpread(4000);
+          let z = THREE.MathUtils.randFloat(-4000, 4000);
+          // Avoid near home runway or any runway.
+          if (isOnHomeRunwayArea(x, z) || isNearAnyRunway(x, z)) continue;
+          let treeClone = baseTree.clone();
+          let scale = THREE.MathUtils.randFloat(2, 5);
+          treeClone.scale.set(scale, scale, scale);
+          treeClone.position.set(x, 0, z);
+          scene.add(treeClone);
+        }
+      });
+    }
+    function isOnHomeRunwayArea(x, z) {
+      if (x > -15 && x < 15 && z < 10 && z > -210) return true;
       return false;
     }
 
@@ -827,7 +841,10 @@
       animate();
     }
 
-    document.getElementById("startButton").addEventListener("click", startGame);
+    // Wait for the DOM to load before adding the event listener.
+    window.addEventListener("DOMContentLoaded", () => {
+      document.getElementById("startButton").addEventListener("click", startGame);
+    });
   </script>
 </body>
 </html>
