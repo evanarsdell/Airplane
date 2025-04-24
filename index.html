@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <!-- Prevent zooming and disable user scaling/touch callouts -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Flight Simulator – Final Version (Landscape & Airports Revised with Tree2)</title>
+  <title>Flight Simulator – Final Version (Landscape, Airports & Tree2)</title>
   <style>
     html, body {
       margin: 0;
@@ -20,8 +20,8 @@
       user-select: none;
     }
     canvas { display: block; }
-
-    /* HUD in top-left for altitude and speed */
+    
+    /* HUD at top-left for altitude and speed */
     #hud {
       position: fixed;
       top: 20px;
@@ -33,7 +33,7 @@
       z-index: 30;
       font-size: 14px;
     }
-
+    
     /* Timer and high score in top-right */
     #timerDisplay, #highScoreDisplay {
       position: fixed;
@@ -49,7 +49,7 @@
       margin-bottom: 5px;
     }
     #highScoreDisplay { top: 70px; }
-
+    
     /* Throttle slider container – bottom-right */
     #throttleContainer {
       position: fixed;
@@ -82,7 +82,7 @@
       border-radius: 50%;
       margin-top: -3px;
     }
-
+    
     /* Virtual joystick container – centered at bottom, red-tinted */
     #joystick-container {
       position: fixed;
@@ -108,14 +108,12 @@
       position: relative;
       touch-action: none;
     }
-
+    
     /* Start screen overlay – centered */
     #startScreen {
       position: fixed;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
+      top: 0; left: 0;
+      width: 100vw; height: 100vh;
       background: rgba(0,0,0,0.85);
       color: #fff;
       z-index: 100;
@@ -135,7 +133,7 @@
       font-size: 18px;
       cursor: pointer;
     }
-
+    
     /* Landing success pop-up */
     #landingMessage {
       position: fixed;
@@ -151,7 +149,7 @@
       text-align: center;
       display: none;
     }
-
+    
     /* Objective banner at top center – shows for 5 seconds at start */
     #objectiveBanner {
       position: fixed;
@@ -179,6 +177,7 @@
   </script>
 </head>
 <body oncopy="return false;" onpaste="return false;" oncut="return false;">
+
   <!-- Start Screen Overlay -->
   <div id="startScreen">
     <h1>Flight Simulator</h1>
@@ -298,15 +297,15 @@
       directionalLight.position.set(100, 150, 100);
       scene.add(directionalLight);
 
-      // Create home runway (ID=1) at (0, 1.2, -10).
+      // Create home runway (ID=1) at (0,1.2,-10).
       homeRunway = createRunway(new THREE.Vector3(0, 1.2, -10), 1, true);
 
       // Additional runways:
-      // Mountain runway – placed on a mountain.
+      // Mountain runway: placed on a mountain (shifted left and higher Y).
       createRunway(new THREE.Vector3(-300, 50, -1800), runwayCounter++);
-      // Valley runway – placed in a deep valley.
+      // Valley runway: placed in a deep valley (shifted right and lower Y).
       createRunway(new THREE.Vector3(300, -10, -1800), runwayCounter++);
-      // Fourth runway – normal placement.
+      // Fourth runway: normal placement.
       createRunway(new THREE.Vector3(0, 1.2, -2500), runwayCounter++);
 
       // Spawn brown houses.
@@ -315,10 +314,10 @@
       // Spawn generic trees.
       spawnInfiniteLandscape();
 
-      // Spawn tall pine trees along the map's edge.
+      // Spawn tall pine trees along map's edge.
       spawnTallPineTrees(100);
 
-      // Scatter the uploaded tree2.glb models around the map.
+      // Scatter tree2.glb models around the map.
       spawnTree2Models(50);
 
       // Clouds.
@@ -346,7 +345,6 @@
         "models/plane.glb",
         (gltf) => {
           plane = gltf.scene;
-          // Position plane on home runway.
           plane.position.set(0, 1.2, -10);
           plane.rotation.set(0, 0, 0);
           scene.add(plane);
@@ -370,7 +368,7 @@
       clock = new THREE.Clock();
       window.addEventListener("resize", onWindowResize);
 
-      // Camera and joystick event listeners.
+      // Add camera and joystick event listeners.
       renderer.domElement.addEventListener("pointerdown", onCameraDragStart);
       renderer.domElement.addEventListener("pointermove", onCameraDragMove);
       renderer.domElement.addEventListener("pointerup", onCameraDragEnd);
@@ -385,13 +383,13 @@
     /**
      * Creates a runway, centered at 'position', with a given runwayID.
      * If isHome is true, marks the runway as the home runway.
-     * Also adds a control tower and an airport building.
+     * Also adds an airport control tower and building.
      */
     function createRunway(position, runwayID, isHome = false, heading = 0) {
       const runwayWidth = targetPlaneLength * 2.5;
       const runwayLength = targetPlaneLength * 25;
       const runwayGeo = new THREE.PlaneGeometry(runwayWidth, runwayLength);
-      // Create a simple runway texture with dashed center lines.
+      // Create runway texture.
       const runwayCanvas = document.createElement("canvas");
       runwayCanvas.width = 64;
       runwayCanvas.height = 256;
@@ -481,7 +479,7 @@
       }
     }
 
-    // Environment spawner: Generic trees only.
+    // Environment spawner: Generic trees (no cube buildings).
     function spawnInfiniteLandscape() {
       for (let i = 0; i < 800; i++) {
         let x, z;
@@ -497,7 +495,7 @@
       return false;
     }
 
-    // Basic environment item: Brown house.
+    // Basic environment items.
     function createHouse(x, z, scaleFactor = 1) {
       const houseGroup = new THREE.Group();
       const bodyGeo = new THREE.BoxGeometry(10, 8, 10);
@@ -517,8 +515,6 @@
       houseGroup.userData.boundingBox = new THREE.Box3().setFromObject(houseGroup);
       obstacles.push(houseGroup);
     }
-
-    // Basic environment item: Generic tree.
     function createTree(x, z) {
       const treeGroup = new THREE.Group();
       const trunkHeight = THREE.MathUtils.randFloat(1.5, 3);
@@ -537,7 +533,7 @@
       treeGroup.position.set(x, 0, z);
       scene.add(treeGroup);
     }
-
+    
     // New: Create a tall pine tree.
     function createTallTree(x, z) {
       const treeGroup = new THREE.Group();
@@ -558,7 +554,7 @@
       treeGroup.position.set(x, 0, z);
       scene.add(treeGroup);
     }
-
+    
     // New spawner for tall pine trees.
     function spawnTallPineTrees(num) {
       for (let i = 0; i < num; i++) {
@@ -568,18 +564,19 @@
         createTallTree(x, z);
       }
     }
-    // Check if a position is near any runway.
+    // Checks if a position is too near any runway.
     function isNearAnyRunway(x, z) {
       for (let i = 0; i < runways.length; i++) {
         let center = runways[i].userData.center;
         let dx = x - center.x;
         let dz = z - center.z;
-        if (Math.sqrt(dx * dx + dz * dz) < 200) return true;
+        let distance = Math.sqrt(dx * dx + dz * dz);
+        if (distance < 200) return true;
       }
       return false;
     }
-
-    // New: Scatter the "tree2.glb" model around the map.
+    
+    // New: Scatter "tree2.glb" models around the map.
     function spawnTree2Models(num) {
       const loader = new GLTFLoader();
       loader.load("models/tree2.glb", (gltf) => {
@@ -587,7 +584,7 @@
         for (let i = 0; i < num; i++) {
           let x = THREE.MathUtils.randFloatSpread(4000);
           let z = THREE.MathUtils.randFloat(-4000, 4000);
-          // Avoid area near home runway or any runway.
+          // Avoid areas near the home runway and any runway.
           if (isOnHomeRunwayArea(x, z) || isNearAnyRunway(x, z)) continue;
           let treeClone = baseTree.clone();
           let scale = THREE.MathUtils.randFloat(2, 5);
@@ -597,49 +594,13 @@
         }
       });
     }
-    function isOnHomeRunwayArea(x, z) {
-      if (x > -15 && x < 15 && z < 10 && z > -210) return true;
-      return false;
-    }
-
-    // Clouds.
-    function spawnClouds() {
-      for (let i = 0; i < 120; i++) {
-        const cloud = createCloud(THREE.MathUtils.randFloat(300, 1000));
-        scene.add(cloud);
-      }
-    }
-    function spawnHighClouds() {
-      for (let i = 0; i < 120; i++) {
-        const cloud = createCloud(THREE.MathUtils.randFloat(6000, 6100));
-        scene.add(cloud);
-      }
-    }
-    function createCloud(yPos) {
-      const cloudGroup = new THREE.Group();
-      const material = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 });
-      const sphere1 = new THREE.Mesh(new THREE.SphereGeometry(15, 16, 16), material);
-      cloudGroup.add(sphere1);
-      const sphere2 = new THREE.Mesh(new THREE.SphereGeometry(10, 16, 16), material);
-      sphere2.position.set(12, 0, 0);
-      cloudGroup.add(sphere2);
-      const sphere3 = new THREE.Mesh(new THREE.SphereGeometry(8, 16, 16), material);
-      sphere3.position.set(-10, 3, 0);
-      cloudGroup.add(sphere3);
-      cloudGroup.position.set(
-        THREE.MathUtils.randFloatSpread(2000),
-        yPos,
-        THREE.MathUtils.randFloatSpread(2000)
-      );
-      return cloudGroup;
-    }
 
     function onWindowResize() {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
     }
-
+    
     // Camera dragging.
     function onCameraDragStart(event) {
       if (event.target.closest("#joystick-container") ||
@@ -660,7 +621,7 @@
     function onCameraDragEnd(event) {
       isDraggingCamera = false;
     }
-
+    
     // Joystick pointer events.
     let joystickActive = false;
     let joystickCenter = { x: 0, y: 0 };
@@ -699,7 +660,7 @@
       const moveY = Math.max(-thumbMax, Math.min(thumbMax, dy));
       joystickElem.style.transform = `translate(${moveX}px, ${moveY}px)`;
     }
-
+    
     // Camera trailing.
     function updateCamera(delta) {
       if (!plane) return;
@@ -719,7 +680,7 @@
                                 .add(new THREE.Vector3(0, verticalOffset, 0));
       camera.lookAt(lookAtPoint);
     }
-
+    
     // Timer update.
     function updateTimerDisplay() {
       const currentTime = performance.now();
@@ -731,7 +692,7 @@
         highScoreDisplay.innerHTML = `High Score: --`;
       }
     }
-
+    
     // Collision detection ignoring runways.
     function checkCollisions() {
       if (!plane) return;
@@ -745,7 +706,7 @@
         }
       }
     }
-
+    
     /**
      * Checks whether the plane is on any non-home runway (throttle=0, altitude low).
      */
@@ -765,7 +726,7 @@
         }
       }
     }
-
+    
     /**
      * Returns true if planePos is within the rectangle of a runway (in runway local coordinates).
      */
@@ -781,7 +742,7 @@
       let halfL = runway.userData.length / 2;
       return (localX > -halfW && localX < halfW && localZ > -halfL && localZ < halfL);
     }
-
+    
     function handleLandingSuccess(runwayID) {
       const currentTime = performance.now();
       const landingTime = ((currentTime - flightStartTime) / 1000).toFixed(1);
@@ -799,7 +760,7 @@
         flightStartTime = performance.now();
       }, 3000);
     }
-
+    
     // Main animation loop.
     function animate() {
       requestAnimationFrame(animate);
@@ -834,7 +795,7 @@
       updateTimerDisplay();
       renderer.render(scene, camera);
     }
-
+    
     function startGame() {
       document.getElementById("startScreen").style.display = "none";
       flightStartTime = performance.now();
@@ -842,7 +803,7 @@
       init();
       animate();
     }
-
+    
     document.getElementById("startButton").addEventListener("click", startGame);
   </script>
 </body>
