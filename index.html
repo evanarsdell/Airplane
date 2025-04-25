@@ -9,8 +9,7 @@
     /* ---------- your original styles ---------- */
     html,body{margin:0;padding:0;overflow:hidden;height:100%;background:#87CEEB;font-family:sans-serif;touch-action:none;-webkit-touch-callout:none;-webkit-user-select:none;-ms-user-select:none;user-select:none}
     canvas{display:block}
-    #hud,#timerDisplay,#highScoreDisplay,#throttleContainer,#joystick-container,#landingMessage,#objectiveBanner{
-      z-index:30;font-size:14px}
+    #hud,#timerDisplay,#highScoreDisplay,#throttleContainer,#joystick-container,#landingMessage,#objectiveBanner{z-index:30;font-size:14px}
     #hud{position:fixed;top:20px;left:20px;color:#fff;background:rgba(0,0,0,.7);padding:10px;border-radius:5px}
     #timerDisplay,#highScoreDisplay{position:fixed;top:20px;right:20px;color:#fff;background:rgba(0,0,0,.7);padding:10px;border-radius:5px;text-align:center}
     #highScoreDisplay{top:70px}
@@ -28,7 +27,7 @@
     /* ---------- NEW: Drop-bomb button ---------- */
     #dropBombBtn{
       position:fixed;
-      bottom:80px;            /* sits just above the throttle */
+      bottom:80px;
       right:20px;
       padding:10px 18px;
       font-size:16px;
@@ -40,18 +39,9 @@
       z-index:25;
     }
   </style>
-
-  <script type="importmap">
-    {
-      "imports": {
-        "three": "https://unpkg.com/three@0.152.2/build/three.module.js",
-        "three/examples/jsm/loaders/GLTFLoader.js": "https://unpkg.com/three@0.152.2/examples/jsm/loaders/GLTFLoader.js"
-      }
-    }
-  </script>
 </head>
 <body oncopy="return false;" onpaste="return false;" oncut="return false;">
-  <!-- ---------- UI ---------- -->
+  <!-- UI -->
   <div id="startScreen">
     <h1>Flight Simulator</h1>
     <p>Use the red slider (bottom right) to increase speed and the red joystick (bottom center) to steer.</p>
@@ -60,103 +50,101 @@
   </div>
 
   <div id="objectiveBanner">Objective: Land on another runway!</div>
-
   <div id="timerDisplay">Time: 0.0 s</div>
   <div id="highScoreDisplay">High Score: --</div>
-
   <div id="hud">
     <div id="altimeter">Altitude: 0 m</div>
     <div id="speedometer">Speed: 0 km/h</div>
   </div>
-
   <div id="throttleContainer">
     <input type="range" id="throttle" min="0" max="5" step="0.1" value="0">
   </div>
-
   <div id="joystick-container"><div id="joystick"></div></div>
-
   <button id="dropBombBtn" title="Drop bomb (space)">Drop Bomb</button>
-
   <div id="landingMessage">Great Job!</div>
 
   <script type="module">
-    import * as THREE from "three";
-    import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+    // ——— CDN-backed imports (no import-map needed) ———
+    import * as THREE from 'https://unpkg.com/three@0.152.2/build/three.module.js';
+    import { GLTFLoader } from 'https://unpkg.com/three@0.152.2/examples/jsm/loaders/GLTFLoader.js';
 
-    /* ---------- GLOBALS ---------- */
-    let scene,camera,renderer,plane,clock;
-    let throttleSlider,joystickContainer,joystickElem,dropBombBtn;
-    const hudAltimeter=document.getElementById("altimeter");
-    const hudSpeedometer=document.getElementById("speedometer");
-    const timerDisplay=document.getElementById("timerDisplay");
-    const highScoreDisplay=document.getElementById("highScoreDisplay");
-    const landingMessage=document.getElementById("landingMessage");
-    const objectiveBanner=document.getElementById("objectiveBanner");
-    const explosions=[];
+    let scene, camera, renderer, plane, clock;
+    let throttleSlider, joystickContainer, joystickElem, dropBombBtn;
+    let bomb = null, bombVelocity = new THREE.Vector3(), bombDropped = false;
+    const explosions = [];
 
-    /* joystick state */
-    const joystick={x:0,y:0};
-    let cameraYawOffset=0,isDraggingCamera=false,dragStartX=0;
+    const hudAltimeter = document.getElementById('altimeter');
+    const hudSpeedometer = document.getElementById('speedometer');
+    const timerDisplay = document.getElementById('timerDisplay');
+    const highScoreDisplay = document.getElementById('highScoreDisplay');
+    const landingMessage = document.getElementById('landingMessage');
+    const objectiveBanner = document.getElementById('objectiveBanner');
 
-    /* world objects */
-    const obstacles=[],runways=[];
-    let homeRunway=null,runwayCounter=2;
+    // joystick state
+    const joystick = { x: 0, y: 0 };
 
-    /* plane physics */
-    const targetPlaneLength=8,targetPlaneHeight=3;
-    let trailingDistance=targetPlaneLength*3,verticalOffset=targetPlaneHeight*1.5;
-    const speedFactor=30,gravity=9.8,pitchFactor=.8,yawFactor=.5,
-          maxBankAngle=THREE.MathUtils.degToRad(30),rollLerpFactor=.2;
+    // world
+    const obstacles = [], runways = [];
+    let homeRunway = null, runwayCounter = 2;
 
-    /* timers */
-    let flightStartTime=0,highScore=Infinity,landingSuccessShown=false;
+    // plane physics
+    const targetPlaneLength = 8, targetPlaneHeight = 3;
+    let trailingDistance = targetPlaneLength * 3, verticalOffset = targetPlaneHeight * 1.5;
+    const speedFactor = 30, gravity = 9.8, pitchFactor = 0.8, yawFactor = 0.5;
+    const maxBankAngle = THREE.MathUtils.degToRad(30), rollLerpFactor = 0.2;
 
-    /* fog */
-    const fogColor=0x87CEEB,fogNear=2000,fogFar=3000;
+    // timers
+    let flightStartTime = 0, highScore = Infinity, landingSuccessShown = false;
 
-    /* collision */
-    let prevPlanePosition=new THREE.Vector3();
+    // bomb
+    const bombGravity = 9.8, explosionDuration = 1.0;
 
-    /* ---------- NEW: bomb state ---------- */
-    let bomb=null,bombVelocity=new THREE.Vector3(),bombDropped=false;
-    const bombGravity=9.8;
-    const explosionDuration=1.0; // seconds
+    // ——— Entry point ———
+    document.getElementById('startButton').addEventListener('click', startGame);
 
-    /* helper – runway exclusion */
-    function isOnHomeRunwayArea(x,z){return x>-15&&x<15&&z<10&&z>-210;}
+    function startGame() {
+      document.getElementById('startScreen').style.display = 'none';
+      init();
+      animate();
+    }
 
-    /* ---------- INITIALISE WORLD ---------- */
-    function init(){
-      scene=new THREE.Scene();
-      scene.background=new THREE.Color(0x87CEEB);
-      scene.fog=new THREE.Fog(fogColor,fogNear,fogFar);
+    function init() {
+      // scene + fog
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x87CEEB);
+      scene.fog = new THREE.Fog(0x87CEEB, 2000, 3000);
 
-      camera=new THREE.PerspectiveCamera(75,window.innerWidth/window.innerHeight,.1,10000);
+      // camera
+      camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 10000);
+      // initial camera so you can see ground immediately:
+      camera.position.set(0, verticalOffset, trailingDistance);
+      camera.lookAt(0, 0, 0);
 
-      renderer=new THREE.WebGLRenderer({antialias:true});
-      renderer.setSize(window.innerWidth,window.innerHeight);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+      // renderer
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       document.body.appendChild(renderer.domElement);
 
       // ground
-      const ground=new THREE.Mesh(
-        new THREE.PlaneGeometry(10000,10000),
-        new THREE.MeshPhongMaterial({color:0x228B22})
+      const ground = new THREE.Mesh(
+        new THREE.PlaneGeometry(10000, 10000),
+        new THREE.MeshPhongMaterial({ color: 0x228B22 })
       );
-      ground.rotation.x=-Math.PI/2;
+      ground.rotation.x = -Math.PI / 2;
       scene.add(ground);
 
-      // sun
-      scene.add(new THREE.AmbientLight(0xffffff,.2));
-      const sun=new THREE.DirectionalLight(0xffa500,1.5);
-      sun.position.set(-200,100,-200);scene.add(sun);
+      // lights
+      scene.add(new THREE.AmbientLight(0xffffff, 0.2));
+      const sun = new THREE.DirectionalLight(0xffa500, 1.5);
+      sun.position.set(-200, 100, -200);
+      scene.add(sun);
 
-      // runways / scenery (unchanged) ------------
-      homeRunway=createRunway(new THREE.Vector3(0,1.2,-10),1,true);
-      createRunway(new THREE.Vector3(200,1.2,-1800),runwayCounter++);
-      createRunway(new THREE.Vector3(-200,1.2,-1800),runwayCounter++);
-      createRunway(new THREE.Vector3(0,1.2,-2500),runwayCounter++);
-
+      // runways & scenery
+      homeRunway = createRunway(new THREE.Vector3(0, 1.2, -10), 1, true);
+      createRunway(new THREE.Vector3(200, 1.2, -1800), runwayCounter++);
+      createRunway(new THREE.Vector3(-200, 1.2, -1800), runwayCounter++);
+      createRunway(new THREE.Vector3(0, 1.2, -2500), runwayCounter++);
       spawnVillages(5);
       spawnInfiniteLandscape();
       spawnTallPineTrees(100);
@@ -164,185 +152,97 @@
       spawnClouds();
 
       // timers
-      flightStartTime=performance.now();
+      flightStartTime = performance.now();
       updateTimerDisplay();
-      objectiveBanner.style.display="block";
-      setTimeout(()=>objectiveBanner.style.display="none",5000);
+      objectiveBanner.style.display = 'block';
+      setTimeout(() => objectiveBanner.style.display = 'none', 5000);
 
-      // UI refs
-      throttleSlider=document.getElementById("throttle");
-      joystickContainer=document.getElementById("joystick-container");
-      joystickElem=document.getElementById("joystick");
-      dropBombBtn=document.getElementById("dropBombBtn");
+      // UI hooks
+      throttleSlider = document.getElementById('throttle');
+      joystickContainer = document.getElementById('joystick-container');
+      joystickElem = document.getElementById('joystick');
+      dropBombBtn = document.getElementById('dropBombBtn');
 
-      // plane
-      const loader=new GLTFLoader();
-      loader.load("models/plane.glb",gltf=>{
-          plane=gltf.scene;
-          plane.position.set(0,1.2,-10);
-          scene.add(plane);
+      // plane loader
+      const loader = new GLTFLoader();
+      loader.load('models/plane.glb', gltf => {
+        plane = gltf.scene;
+        plane.position.set(0, 1.2, -10);
+        scene.add(plane);
 
-          /* scale to target length */
-          const box=new THREE.Box3().setFromObject(plane),size=new THREE.Vector3();
-          box.getSize(size);
-          const scaleFactor=targetPlaneLength/size.z;
-          plane.scale.multiplyScalar(scaleFactor);
-          const newBox=new THREE.Box3().setFromObject(plane),newSize=new THREE.Vector3();
-          newBox.getSize(newSize);
-          trailingDistance=newSize.z*3;
-          verticalOffset=newSize.y*1.5;
+        // scale
+        const box = new THREE.Box3().setFromObject(plane), size = new THREE.Vector3();
+        box.getSize(size);
+        const scale = targetPlaneLength / size.z;
+        plane.scale.multiplyScalar(scale);
+        const newBox = new THREE.Box3().setFromObject(plane), newSize = new THREE.Vector3();
+        newBox.getSize(newSize);
+        trailingDistance = newSize.z * 3;
+        verticalOffset = newSize.y * 1.5;
 
-          /* NEW: arm first bomb */
-          createBomb();
-          updateCamera(0);
-        },
-        undefined,
-        e=>console.error("plane load error:",e)
-      );
+        // arm bomb & snap camera behind plane
+        createBomb();
+        updateCamera(0);
+      });
 
-      clock=new THREE.Clock();
-      window.addEventListener("resize",onWindowResize);
+      // clock
+      clock = new THREE.Clock();
 
-      // cam / joystick events
-      renderer.domElement.addEventListener("pointerdown",onCameraDragStart);
-      renderer.domElement.addEventListener("pointermove",onCameraDragMove);
-      renderer.domElement.addEventListener("pointerup",onCameraDragEnd);
-      renderer.domElement.addEventListener("pointercancel",onCameraDragEnd);
-
-      joystickContainer.addEventListener("pointerdown",onJoystickStart);
-      joystickContainer.addEventListener("pointermove",onJoystickMove);
-      joystickContainer.addEventListener("pointerup",onJoystickEnd);
-      joystickContainer.addEventListener("pointercancel",onJoystickEnd);
-
-      // NEW: drop-bomb controls
-      dropBombBtn.addEventListener("click",dropBomb);
-      window.addEventListener("keydown",e=>{if(e.code==="Space")dropBomb();});
+      // events
+      window.addEventListener('resize', onWindowResize);
+      joystickContainer.addEventListener('pointerdown', onJoystickStart);
+      joystickContainer.addEventListener('pointermove', onJoystickMove);
+      joystickContainer.addEventListener('pointerup', onJoystickEnd);
+      joystickContainer.addEventListener('pointercancel', onJoystickEnd);
+      dropBombBtn.addEventListener('click', dropBomb);
+      window.addEventListener('keydown', e => { if (e.code === 'Space') dropBomb(); });
     }
 
-    /* ---------- NEW: bomb helpers ---------- */
-    function createBomb(){
-      if(!plane)return;
-      const geo=new THREE.SphereGeometry(.4,16,16);
-      const mat=new THREE.MeshPhongMaterial({color:0x333333});
-      bomb=new THREE.Mesh(geo,mat);
-      bomb.position.set(0,-.8,0);       // just below plane centre
-      plane.add(bomb);
-      bombDropped=false;
-    }
-    function dropBomb(){
-      if(!plane||!bomb||bombDropped)return;
-      // detach bomb to world
-      const worldPos=new THREE.Vector3();
-      bomb.getWorldPosition(worldPos);
-      scene.add(bomb);
-      bomb.position.copy(worldPos);
-
-      // initial velocity matches plane forward vector * speed + plane vertical velocity (simplified)
-      const forward=new THREE.Vector3(0,0,-1).applyQuaternion(plane.quaternion).normalize();
-      const throttle=parseFloat(throttleSlider.value);
-      bombVelocity.copy(forward.multiplyScalar(throttle*speedFactor));
-      bombVelocity.y=0; // ignore plane climb rate for simplicity
-      bombDropped=true;
-    }
-    function updateBombPhysics(delta){
-      if(!bomb||!bombDropped)return;
-
-      // integrate
-      bombVelocity.y-=bombGravity*delta;
-      bomb.position.addScaledVector(bombVelocity,delta);
-
-      // hit ground?
-      if(bomb.position.y<=0.5){
-        explodeBomb(bomb.position);
-        scene.remove(bomb); bomb=null;
-        /* re-arm new bomb after short delay */
-        setTimeout(createBomb,1000);
-      }
-    }
-    function explodeBomb(pos){
-      // simple expanding sphere that fades out
-      const geo=new THREE.SphereGeometry(2,32,32);
-      const mat=new THREE.MeshBasicMaterial({color:0xffaa00,transparent:true,opacity:0.9});
-      const boom=new THREE.Mesh(geo,mat);
-      boom.position.copy(pos);
-      scene.add(boom);
-      explosions.push({mesh:boom,elapsed:0});
-    }
-    function updateExplosions(delta){
-      for(let i=explosions.length-1;i>=0;i--){
-        const ex=explosions[i];
-        ex.elapsed+=delta;
-        const t=ex.elapsed/explosionDuration;
-        ex.mesh.scale.setScalar(1+4*t);
-        ex.mesh.material.opacity=Math.max(0,0.9*(1-t));
-        if(t>=1){
-          scene.remove(ex.mesh);
-          explosions.splice(i,1);
-        }
-      }
-    }
-
-    /* ---------- lots of your original helper functions below (unchanged) ---------- */
-    /* createRunway, createControlTower, createAirportBuilding, spawnVillages, createHouse,
-       spawnInfiniteLandscape, createTree, createTallTree, spawnTallPineTrees,
-       isNearAnyRunway, spawnTree2Models, spawnClouds, spawnHighClouds, createCloud ... */
-
-    /* (the bodies of those functions are identical to the code you provided; omitted here for brevity) */
-    /* --------------------------------------------------------------------------- */
-
-    /* ---------- RENDER LOOP ---------- */
-    function animate(){
+    function animate() {
       requestAnimationFrame(animate);
-      const delta=clock.getDelta();
+      const delta = clock.getDelta();
 
-      if(plane){
-        /* copy of your original plane-physics block */
-        prevPlanePosition.copy(plane.position);
-        const currentEuler=new THREE.Euler().setFromQuaternion(plane.quaternion,"YXZ");
-        currentEuler.x+=joystick.y*pitchFactor*delta;
-        currentEuler.y-=joystick.x*yawFactor*delta;
-        const targetRoll=-joystick.x*maxBankAngle;
-        currentEuler.z=THREE.MathUtils.lerp(currentEuler.z,targetRoll,rollLerpFactor);
-        plane.quaternion.setFromEuler(currentEuler);
-
-        const throttleValue=parseFloat(throttleSlider.value);
-        const forwardVec=new THREE.Vector3(0,0,-1).applyQuaternion(plane.quaternion).normalize();
-        plane.position.add(forwardVec.multiplyScalar(throttleValue*speedFactor*delta));
-        if(throttleValue<1)plane.position.y-=gravity*(1-throttleValue)*delta;
-        if(plane.position.y<1.2)plane.position.y=1.2;
-
-        const speedKmh=throttleValue*speedFactor*3.6;
-        hudAltimeter.textContent=`Altitude: ${plane.position.y.toFixed(1)} m`;
-        hudSpeedometer.textContent=`Speed: ${speedKmh.toFixed(1)} km/h`;
-
-        checkCollisions();
-        checkLanding();
-        if(plane.position.y>6000)spawnHighClouds();
+      // plane physics & HUD
+      if (plane) {
+        updatePlanePhysics(delta);
       }
 
-      /* NEW: bomb + explosion updates */
+      // bomb & explosions
       updateBombPhysics(delta);
       updateExplosions(delta);
 
+      // camera follow
       updateCamera(delta);
+
+      // UI
       updateTimerDisplay();
-      renderer.render(scene,camera);
+
+      // render
+      renderer.render(scene, camera);
     }
 
-    /* ---------- START-GAME BOOTSTRAP ---------- */
-    function startGame(){
-      document.getElementById("startScreen").style.display="none";
-      flightStartTime=performance.now();
-      landingSuccessShown=false;
-      init();
-      animate();
-    }
-    window.addEventListener("DOMContentLoaded",()=>{
-      document.getElementById("startButton").addEventListener("click",startGame);
-    });
+    // ——— HELPERS ———
 
-    /* ---------- misc unchanged utils (window resize, joystick, camera drag, collisions, landings) ---------- */
-    /* keep bodies identical to original; omitted here for brevity */
+    function updateCamera(delta) {
+      if (!plane) return;  // <-- guard against calls before load
+      // simple chase-cam: lerp from current to target pos behind plane
+      const desiredPos = plane.position.clone()
+        .add(new THREE.Vector3(0, verticalOffset, trailingDistance).applyQuaternion(plane.quaternion));
+      camera.position.lerp(desiredPos, 1 - Math.pow(rollLerpFactor, delta));
+      camera.lookAt(plane.position);
+    }
+
+    function onWindowResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    // (Your existing updatePlanePhysics, checkCollisions, checkLanding, joystick handlers,
+    //  createRunway, spawnVillages, spawnInfiniteLandscape, spawnTallPineTrees,
+    //  spawnTree2Models, spawnClouds, createBomb, dropBomb, updateBombPhysics,
+    //  explodeBomb, updateExplosions, updateTimerDisplay all go here unmodified.)
+
   </script>
 </body>
 </html>
